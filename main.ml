@@ -108,9 +108,6 @@ let main () =
     let fn_list = basic_fn_list () in
     let weight_list = random_weights (List.length fn_list) in
     let cpds = cpds_of_data fn_list weight_list (1, 5) data in
-    let cpd_s = List.map string_of_cpd cpds in
-    let cpd_s = String.concat "\n" cpd_s in
-    print_endline cpd_s
 
 let _ =
   if !Sys.interactive then ()

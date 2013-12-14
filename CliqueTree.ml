@@ -179,14 +179,14 @@ let send_msg ?(print_send=false) ~scheme tree node1 node2 =
       node1.id (sosa node1.scope) (sosa edge.sepset)
       (sosa var_set);
     Printf.printf "Node %d cpd:\n%s\n" node1.id (string_of_cpd node1.node_cpd));
-  print_endline "marginalize";
+  if print_send then print_endline "marginalize";
   let msg = match scheme with
     | SumProduct -> marginalize node1.node_cpd cpd_idxs
     | MaxProduct -> marginalize_max node1.node_cpd cpd_idxs
   in
   if print_send then
     Printf.printf "Node %d marginalized cpd:\n%s\n" node1.id (string_of_cpd msg); (* debug *)
-  print_endline "divide";
+  if print_send then print_endline "divide";
   let msg = div msg edge.edge_cpd in
   if print_send then
     Printf.printf "Node %d divided msg:\n%s\n" node1.id (string_of_cpd msg); (* debug *)
@@ -194,9 +194,9 @@ let send_msg ?(print_send=false) ~scheme tree node1 node2 =
   edge.msg_waiting <- node2.id::edge.msg_waiting;
   if print_send then
     Printf.printf "Node %d pre-product cpd:\n%s\n" node2.id (string_of_cpd node2.node_cpd); (* debug *)
-  print_endline "product";
+  if print_send then print_endline "product";
   node2.node_cpd <- product node2.node_cpd msg;
-  print_endline "done";
+  if print_send then print_endline "done";
   if print_send then
     Printf.printf "Node %d post-product cpd:\n%s\n" node2.id (string_of_cpd node2.node_cpd) (* debug *)
 

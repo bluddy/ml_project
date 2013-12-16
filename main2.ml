@@ -47,46 +47,64 @@ let calculate_likelihood obs_file label_file ffs window num_states num_atoms =
   in 
   loop p1 init_obs init_lbls
 
-let gradient1 obs lbls num_ts num_states f fcs ps =
+let gradient1 obs lbls window num_states f fcs ps =
   let lblsa = Array.of_list lbls in 
   let c,e = List.fold_left (fun (curr,exp) t -> 
       let prevs = lblsa.(t-2) in
       let cs    = lblsa.(t-1) in
       let fval = f prevs cs obs t in 
       let newcurr = curr +. fval  in
-      let p = get_p num_ts num_states t fcs ps in
+      let p = get_p window num_states t fcs ps in
       let otherf = f (-1) fcs obs t in 
-      let newexp = p *. otherf
-      in (newcurr,newexp)
-    ) (0.,0.) (create_range 2 (num_ts-1))
-  in c -. e
+      (* debug *)
+      (*Printf.eprintf "gradient1: fval(%f), otherf(%f), p(%f)\n" fval otherf p;*)
+      let newexp = exp +. p *. otherf in
+      (newcurr,newexp)
+    ) (0.,0.) (create_range 2 (window-1))
+  in
+  (* debug *)
+  (*Printf.eprintf "gradient1: c(%f), e(%f)\n" c e;*)
+  c -. e
 
-let gradient2 obs lbls num_ts num_states f fps fcs ps =
+let gradient2 obs lbls window num_states f fps fcs ps =
   let lblsa = Array.of_list lbls in 
   let c,e = List.fold_left (fun (curr,exp) t ->
       let prevs = lblsa.(t-2) in
       let cs    = lblsa.(t-1) in
       let fval = f prevs cs obs t in 
       let newcurr = curr +. fval  in
-      let p = get_p2 num_ts num_states t fps fcs ps in
+      let p = get_p2 window num_states t fps fcs ps in
       let otherf = f fps fcs obs t in
-      let newexp = p *. otherf 
-      in (newcurr,newexp)
-    ) (0.,0.) (create_range 2 (num_ts-1))
-  in c -. e 
+      (* debug *)
+      (*Printf.eprintf "gradient2: fval(%f), otherf(%f), p(%f)\n" fval otherf p;*)
+      let newexp = exp +. p *. otherf in
+      (newcurr,newexp)
+    ) (0.,0.) (create_range 2 (window-1))
+  in
+  (* debug *)
+  (*Printf.eprintf "gradient2: c(%f), e(%f)\n" c e;*)
+  c -. e 
 
 (* return list of gradients for the ffs *)
 let gradient_step obs lbls ffs window num_states =
-  let a = infer ffs num_states window obs in
-  List.map (function
+  let ps = infer ffs num_states window obs in
+  (* debug *)
+  (*Array.iter (fun p -> Printf.eprintf "%f, " p) ps;*)
+  (*Printf.eprintf "\n";*)
+  let grads = List.map (function
     {weight=w;fn=f;prev_state=pso;curr_state=cso} ->
       match cso, pso with
       | None, _        -> failwith "error for now"
       | Some fcs, None -> 
-        gradient1 obs lbls window num_states f fcs a
+        gradient1 obs lbls window num_states f fcs ps
       | Some fcs, Some fps ->
-        gradient2 obs lbls window num_states f fps fcs a
+        gradient2 obs lbls window num_states f fps fcs ps
   ) ffs
+  in
+  (* debug *)
+  (*List.iter (fun p -> Printf.eprintf "%f, " p) grads;*)
+  (*Printf.eprintf "\n";*)
+  grads
 
 let gradient_sweep p ffs =
   let obs_ic = open_in p.input_file in
@@ -111,10 +129,16 @@ let gradient_sweep p ffs =
       acc_grads
   in
   let grads = loop init_obs init_lbls grads_init in
-  List.map2 (fun grad ff ->
+  let ffs' = List.map2 (fun grad ff ->
     let weight = ff.weight +. (grad *. p.alpha *. inv_num_slides) in
+    (* debug *)
+    (*Printf.eprintf "%f, " weight;*)
     {ff with weight}
   ) grads ffs
+  in
+  (* debug *)
+  (*Printf.eprintf "\n";*)
+  ffs'
  
 let gradient_ascent p ffs =
   let rec loop ffs = function
@@ -165,8 +189,8 @@ let main () =
 
   let p = params in
   if p.input_file = "" then print_endline usage_msg else
-  let num_states, window, num_ts, num_atoms, obs_file, alpha, iter = 
-    p.num_states, p.window, p.ts, p.num_atoms, p.input_file,
+  let num_states, window, num_atoms, obs_file, alpha, iter = 
+    p.num_states, p.window, p.num_atoms, p.input_file,
     p.alpha, p.num_iter
   in 
   match params.action with
@@ -176,8 +200,8 @@ let main () =
     (* build feature functions *)
     let ffs = build_1state_xffs num_states num_atoms 
             @ build_1state_xffs2 num_states num_atoms 
-            @ build_transition_ffs num_states in
-
+            @ build_transition_ffs num_states
+    in
     let ll =
       calculate_likelihood obs_file label_file ffs window num_states num_atoms
     in print_endline @: sof ll;

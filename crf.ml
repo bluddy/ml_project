@@ -1,6 +1,5 @@
 open Util
 open Cpd
-open Inference
 
 type state = int
 type atom = {
@@ -77,8 +76,6 @@ let read_n_obs ic n num_atoms : observation array =
   ) 0 n in
   Array.of_list l
 
-
-
 let print_obs obs = 
   let data = Array.to_list obs in
   List.iter (fun tup ->
@@ -92,62 +89,61 @@ let print_obs obs =
   ) data
 
 let print_ffs ffs =
-   List.iter (fun ff ->
-     match ff with
-     |  {weight=w;comment=c} -> Printf.printf "%s: %f\n" c w
-   ) ffs
-
+  List.iter (fun {weight;comment} ->
+     Printf.printf "%s: %f\n" comment weight
+  ) ffs
 
 let get_potential ffs prev_state curr_state obs t = 
-   List.fold_left (fun acc ff  ->
-     match ff with
-     | {weight=w;fn=f} -> acc +. (w *. (f prev_state curr_state obs t))
-   ) 0. ffs
+  List.fold_left (fun acc {weight;fn;_}  ->
+    acc +. (weight *. (fn prev_state curr_state obs t))
+  ) 0. ffs
 
 let random_weight () = (Random.float 1.) -. 0.5
 
 (* feature functions should only be called starting at t=2 *)
 let build_1state_xffs num_states num_atoms =
-     let nested_list = list_populate (fun on_state ->
-       let newfns = list_populate (fun atom_num ->
+     List.flatten @:
+     list_populate (fun on_state ->
+       list_populate (fun atom_num ->
          {
           comment = "X coordinate";
           atom_idx = Some atom_num;
           prev_state=None;
           curr_state=Some on_state;
           weight=random_weight ();
-          fn = (fun last curr obs t ->
-                  if curr = on_state then obs.(t-1).atoms.(atom_num).x else 0.)
+          fn = fun last curr obs t ->
+                if curr = on_state 
+                then obs.(t-1).atoms.(atom_num).x 
+                else 0.
          }
        ) 0 num_atoms
-       in newfns
      ) 1 num_states 
-   in List.flatten nested_list  
 
 let build_transition_ffs num_states = 
-     let nested_list = list_populate (fun prev_on_state ->
-       let newfns = list_populate (fun on_state ->
-         {
-          comment = "Transition function";
-          atom_idx = None;
-          prev_state=Some prev_on_state;
-          curr_state=Some on_state;
-          weight=random_weight ();
-          fn = (fun last curr obs t ->
-                  if (last = prev_on_state && curr = on_state) 
-                  then 1.
-                  else 0.)
-         }
-       ) 1 num_states
-       in newfns
-     ) 1 num_states 
-   in List.flatten nested_list  
+  List.flatten @: 
+  list_populate (fun prev_on_state ->
+    list_populate (fun on_state ->
+      {
+        comment = "Transition function";
+        atom_idx = None;
+        prev_state=Some prev_on_state;
+        curr_state=Some on_state;
+        weight=random_weight ();
+        fn = fun last curr obs t ->
+               if last = prev_on_state && curr = on_state 
+               then 1.
+               else 0.
+      }
+    ) 1 num_states
+  ) 1 num_states 
 
+(* build initial cpds for our data *)
 let cpds_of_data ffs num_states num_timesteps obs =   
   list_populate (fun t ->
     let data = List.flatten @:
       list_populate (fun y_last ->
         let y_last_id = id_of_str @: soi y_last in
+        (* all (last, cur) combination *)
         list_populate (fun y_curr ->
           let y_curr_id = id_of_str @: soi y_curr in
           let p = get_potential ffs y_last y_curr obs t in
@@ -158,20 +154,13 @@ let cpds_of_data ffs num_states num_timesteps obs =
     let t_last_id = id_of_str @: soi (t-1) in
     let t_id = id_of_str @: soi t in
     {vars=[|t_last_id;t_id|]; backptrs=[||];data}
-  ) 2 (num_timesteps-1)  
+  ) 2 (num_timesteps-1)
 
-
-
-
-
-let to_non_option l = 
-  List.map (fun o -> 
-    match o with
-    | Some f -> f
-    | None -> failwith "Error in query result!"
-  ) l 
-
-
-
-
+let next_window num_atoms last_obs in_chan : observation array = 
+  let next = read_one_obs num_atoms in_chan in
+  for i=0 to Array.length last_obs - 2 do
+    last_obs.(i) <- last_obs.(i+1)
+  done;
+  last_obs.(Array.length last_obs - 1) <- next;
+  last_obs
 

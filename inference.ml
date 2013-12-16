@@ -114,3 +114,19 @@ let do_inference params cpds =
   let p_time2 = Unix.times () in
   answers
 
+let infer ffs num_states num_ts obs : float array = 
+  let cpds = Crf.cpds_of_data ffs num_states num_ts obs in
+  let p = {
+    action=Inference;
+    network_file="";
+    cpd_file="";
+    cliquetree_file="cliquetree.txt";
+    queries_file="queries.txt";
+    debug_send=false;
+    print_tree=false;
+    incremental=true;
+    time=false;
+  } in
+  let answers = List.map unwrap_some @: do_inference p cpds in
+  Array.of_list answers
+

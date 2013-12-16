@@ -175,18 +175,20 @@ let main () =
     if label_file = "" then print_endline usage_msg else
     (* build feature functions *)
     let ffs = build_1state_xffs num_states num_atoms 
+            @ build_1state_xffs2 num_states num_atoms 
             @ build_transition_ffs num_states in
 
     let ll =
-      calculate_likelihood obs_file label_file ffs num_ts num_states num_atoms
+      calculate_likelihood obs_file label_file ffs window num_states num_atoms
     in print_endline @: sof ll;
     gradient_ascent params ffs
 
   | GenLabels ->
     let ffs = build_1state_xffs num_states num_atoms 
+            @ build_1state_xffs2 num_states num_atoms 
             @ build_transition_ffs num_states
     in
-    gen_labels obs_file ffs num_ts num_states num_atoms
+    gen_labels obs_file ffs window num_states num_atoms
     
 let _ =
   if !Sys.interactive then ()

@@ -63,12 +63,12 @@ let rec sample_until_eof
    sample_until_eof ic ffs num_atoms num_states labels obs num_ts
   with End_of_file -> ()
 
-let gen_labels file ffs num_ts num_states num_atoms = 
+let gen_labels file ffs window num_states num_atoms = 
   let ic = open_in file in
-  let init_obs = read_n_obs ic num_ts num_atoms in
-  let labels = sample_initial_labels ffs num_states num_ts init_obs in
+  let init_obs = read_n_obs ic window num_atoms in
+  let labels = sample_initial_labels ffs num_states window init_obs in
   List.iter (fun state -> print_endline (soi state)) labels;
-  sample_until_eof ic ffs num_atoms num_states labels init_obs num_ts;
+  sample_until_eof ic ffs num_atoms num_states labels init_obs window;
   close_in ic
 
 let prob_of_lbls obs lbls ffs num_states num_ts = 

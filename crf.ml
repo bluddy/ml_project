@@ -112,8 +112,26 @@ let build_1state_xffs num_states num_atoms =
           curr_state=Some on_state;
           weight=random_weight ();
           fn = fun last curr obs t ->
-                if curr = on_state 
-                then obs.(t-1).atoms.(atom_num).x 
+                if curr = on_state &&
+                   obs.(t-1).atoms.(atom_num).x < obs.(t-2).atoms.(atom_num).x then 1.
+                else 0.
+         }
+       ) 0 num_atoms
+     ) 1 num_states 
+
+let build_1state_xffs2 num_states num_atoms =
+     List.flatten @:
+     list_populate (fun on_state ->
+       list_populate (fun atom_num ->
+         {
+          comment = "X coordinate";
+          atom_idx = Some atom_num;
+          prev_state=None;
+          curr_state=Some on_state;
+          weight=random_weight ();
+          fn = fun last curr obs t ->
+                if curr = on_state &&
+                   obs.(t-1).atoms.(atom_num).x >= obs.(t-2).atoms.(atom_num).x then 1.
                 else 0.
          }
        ) 0 num_atoms

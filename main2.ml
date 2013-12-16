@@ -23,7 +23,8 @@ let next_window num_atoms last_obs in_chan : observation array =
   for i=0 to Array.length last_obs - 2 do
     last_obs.(i) <- last_obs.(i+1)
   done;
-  last_obs.(Array.length last_obs - 1) <- next
+  last_obs.(Array.length last_obs - 1) <- next;
+  last_obs
 
 (* calculate joint p(ys|x) by multiplying factors over all data *)
 let calculate_likelihood obs_file label_file ffs window num_states num_atoms = 
@@ -54,10 +55,11 @@ let gradient1 obs lbls num_ts num_states f fcs ps =
       let fval = f prevs cs obs t in 
       let newcurr = curr +. fval  in
       let p = get_p num_ts num_states t fcs ps in
-      let newexp = p *. fval
+      let otherf = f (-1) fcs obs t in 
+      let newexp = p *. otherf
       in (newcurr,newexp)
     ) (0.,0.) (create_range 2 (num_ts-1))
-in ((1.+.c) -. (1.+.e)) -. 2.
+  in c -. e
 
 let gradient2 obs lbls num_ts num_states f fps fcs ps =
   let lblsa = Array.of_list lbls in 
@@ -67,26 +69,24 @@ let gradient2 obs lbls num_ts num_states f fps fcs ps =
       let fval = f prevs cs obs t in 
       let newcurr = curr +. fval  in
       let p = get_p2 num_ts num_states t fps fcs ps in
-      let newexp = p *. fval
+      let otherf = f fps fcs obs t in
+      let newexp = p *. otherf 
       in (newcurr,newexp)
     ) (0.,0.) (create_range 2 (num_ts-1))
-  in ((1.+.c) -. (1.+.e)) -. 2.
+  in c -. e 
 
-let gradient_step obs lbls ffs num_ts num_atoms num_states num_examples alpha =
-  let a = infer ffs num_states num_ts obs in
-  let gradient_ff = function
-  | {weight=w;fn=f;prev_state=pso;curr_state=cso} as ff ->
-    match cso, pso with
-    | None, _ -> failwith "error for now"
-    | Some fcs, None -> 
-      let d = gradient1 obs lbls num_ts num_states f fcs a in
-      let new_w = w +. (alpha *. d /. num_examples) in
-      { ff with weight=new_w}
-    | Some fcs, Some fps ->
-      let d = gradient2 obs lbls num_ts num_states f fps fcs a in
-      let new_w = w +. (alpha *. d /. num_examples) in
-      { ff with weight=new_w}
-  in List.map gradient_ff ffs
+(* return list of gradients for the ffs *)
+let gradient_step obs lbls ffs window num_states =
+  let a = infer ffs num_states window obs in
+  List.map (function
+    {weight=w;fn=f;prev_state=pso;curr_state=cso} ->
+      match cso, pso with
+      | None, _        -> failwith "error for now"
+      | Some fcs, None -> 
+        gradient1 obs lbls window num_states f fcs a
+      | Some fcs, Some fps ->
+        gradient2 obs lbls window num_states f fps fcs a
+  ) ffs
 
 let gradient_sweep p ffs =
   let obs_ic = open_in p.input_file in
@@ -94,19 +94,27 @@ let gradient_sweep p ffs =
   let init_obs = read_n_obs obs_ic p.window p.num_atoms in 
   let init_lbls = List.map ios @: read_n_lines p.window lbl_ic in 
   let num_slides = foi @: p.ts - p.window + 1 in
-  let rec loop prev_obs prev_lbls prev_ffs  =
+  let inv_num_slides = 1. /. num_slides in
+  let grads_init = list_populate (fun _ -> 0.) 0 (List.length ffs)
+  in
+  let rec loop prev_obs prev_lbls acc_grads =
     try
-      let newffs = gradient_step
-        prev_obs prev_lbls prev_ffs p.window p.num_atoms p.num_states num_slides p.alpha in
+      let grads = gradient_step
+        prev_obs prev_lbls ffs p.window p.num_states in
+      let acc_grads' = List.map2 (+.) grads acc_grads in
       let obs = next_window p.num_atoms prev_obs obs_ic in
       let lbls = next_labels prev_lbls lbl_ic in
-      loop obs lbls newffs
+      loop obs lbls acc_grads'
     with End_of_file ->
       close_in obs_ic;
       close_in lbl_ic;
-      prev_ffs
+      acc_grads
   in
-  loop init_obs init_lbls ffs  
+  let grads = loop init_obs init_lbls grads_init in
+  List.map2 (fun grad ff ->
+    let weight = ff.weight +. (grad *. p.alpha *. inv_num_slides) in
+    {ff with weight}
+  ) grads ffs
  
 let gradient_ascent p ffs =
   let rec loop ffs = function

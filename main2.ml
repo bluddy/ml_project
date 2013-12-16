@@ -1,192 +1,242 @@
+open Crf
 open Util
 open Cpd
 open Inference
 
-type state = int
-type atom = {
-  x : float;
-  y : float;
-  z : float;
-  orig_idx : int;
-}
 
-type observation = {
-  timestep : int;
-  atoms : atom array;
-}
+let infer ffs num_states num_ts obs : float array = 
+  let cpds = cpds_of_data ffs num_states num_ts obs in
+  let p = {
+    action=Inference;
+    network_file="";
+    cpd_file="";
+    cliquetree_file="cliquetree.txt";
+    queries_file="queries.txt";
+    debug_send=false;
+    print_tree=false;
+    incremental=true;
+    time=false;
+  } in
+  let answers = (to_non_option @: do_inference p cpds) in
+  Array.of_list answers
 
-type feature_fn = {
-  comment: string;
-  weight: float;
-  atom_idx   : int option;
-  prev_state : int option;
-  curr_state : int option;
-       (*last,  curr     ,                  , t    , value*)
-  fn : (state -> state -> observation array -> int -> float)
-}
+let next_window num_atoms last_obs in_chan : observation array = 
+  let next = read_one_obs num_atoms in_chan in
+  let l = Array.to_list last_obs in
+  let new_l = (tl l) @ [next] in
+  Array.of_list new_l
+
+let rec which_state r cdf state : state = 
+  if r <= (hd cdf)
+  then state
+  else which_state r (tl cdf) (state + 1) 
 
 
-type obsersvations = observation list
 
-let get_p num_ts num_states curr_t curr_s ps =
-  let i = (num_states*(curr_t-1)) + (curr_s - 1) in
-  ps.(i)
-
-let get_p2 num_ts num_states curr_t prev_s curr_s ps =
-  let i = (num_states*num_states*(curr_t-2)) + (num_states*(prev_s - 1)) + (curr_s-1) in
-  let num_in_front = num_ts*num_states in
-  ps.(num_in_front + i)
-
-(* read data into an observation array *)
-let read_obs file : observation array =
-  let lines = read_file_lines file in
-  let r_comma = Str.regexp "," in
-  let read_line line = 
-    match Str.split r_comma line with
-    | [a;b;c;d;e] ->
-      let ts,i,x,y,z =
-        ios a, ios b, fos c, fos d, fos e
-      in
-        ts, i, x,y,z
-    | _ -> failwith "bad input file"
-  in 
-  let data = 
-    List.fold_left (fun acc line ->
-      let ts, i, x,y,z = read_line line in
-      let newatom = {x=x;y=y;z=z;orig_idx=i} in 
+let sample_state ps : state = 
+   let r = Random.float 1. in
+   let cdf = List.rev @: List.fold_left (fun acc p -> 
       match acc with
-      | []  -> [(ts, [newatom])]
-      | (old_ts, alist)::xs when ts=old_ts ->
-          (ts, newatom::alist)::xs
-      | (old_ts,_)::xd ->
-          (ts, [newatom])::acc
-    ) [] lines
+      | []    -> [p]
+      | (x::xs) -> (p +. x)::x::xs
+    ) [] ps in
+    which_state r cdf 1
+
+let normalize_list l = 
+  let sum = List.fold_left (fun acc p -> p +. acc) 0. l in
+  let l = List.map (fun p -> p /. sum) l in
+  l
+
+let print_labels labels =
+  let rec p n labels = match labels with
+  | [] -> ()
+  | x::xs -> Printf.printf "Random label for t%d: %d\n" n x;
+             p (n+1) (tl labels)
+  in p 1 labels
+  
+let sample_next_state num_states num_ts curr_t last_state a = 
+  let pdf = normalize_list @: list_populate (fun n ->
+      get_p2 num_ts num_states curr_t last_state n a
+  ) 1 num_states in
+  sample_state pdf
+
+ 
+let sample_initial_labels ffs num_states num_ts init_obs = 
+  let a = infer ffs num_states num_ts init_obs in
+  (* s1 *)
+  let s1pdf = normalize_list @: list_populate (fun n ->
+      get_p num_ts num_states 1 n a
+  ) 1 num_states in
+  let s1 = sample_state s1pdf in
+  List.rev @: List.fold_left (fun acc t -> match acc with
+    | [] -> failwith "put s1 in the acc!"
+    | prev_state::xs -> (sample_next_state num_states num_ts t prev_state a)::acc
+  ) [s1] (create_range 2 (num_ts -1))
+  
+let sample_next_labels ffs num_states num_ts prev_labels new_obs =
+  let a = infer ffs num_states num_ts new_obs in
+  let labels = List.rev @: tl prev_labels in
+  let newlast = sample_next_state num_states num_ts num_ts (hd labels) a in
+  List.rev @: newlast::labels
+
+let rec sample_until_eof ic ffs num_atoms num_states prev_labels prev_obs num_ts =
+  try
+   let obs = next_window num_atoms prev_obs ic in
+   let labels = sample_next_labels ffs num_states num_ts prev_labels obs in
+   let last_label = hd @: List.rev labels in
+   print_endline (soi last_label);
+   sample_until_eof ic ffs num_atoms num_states labels obs num_ts
+  with End_of_file ->
+    ()
+let gen_labels file ffs num_ts num_states num_atoms = 
+    let ic = open_in file in
+    let init_obs = read_n_obs ic num_ts num_atoms in
+    let labels = sample_initial_labels ffs num_states num_ts init_obs in
+    List.iter (fun state -> print_endline (soi state)) labels;
+    sample_until_eof ic ffs num_atoms num_states labels init_obs num_ts;
+    close_in ic
+
+let prob_of_lbls obs lbls ffs num_states num_ts = 
+  let a = infer ffs num_states num_ts obs in
+  let state =  hd lbls in
+  let p1 = log @: get_p num_ts num_states 1 state a in
+  let rec prod_rest t lbls = match lbls with
+    | [] -> failwith "not on empty list"
+    | [x] -> 0.
+    | prev_lbl::lbls ->
+      let lbls = tl lbls in
+      let curr_lbl = hd lbls in
+      let p = get_p2 num_ts num_states t prev_lbl curr_lbl a in
+      (log p) +. prod_rest (t+1) lbls
+  in exp @: p1 +. (prod_rest 2 lbls) 
+
+let next_labels prev_labels lbl_ic = 
+        (tl prev_labels) @ [(ios @: input_line lbl_ic)]
+
+
+let calculate_likelihood obs_file label_file ffs num_ts num_states num_atoms = 
+  let obs_ic = open_in obs_file in
+  let lbl_ic = open_in label_file in
+  let init_obs = read_n_obs obs_ic num_ts num_atoms in 
+  let init_lbls = List.map ios @: read_n_lines num_ts lbl_ic in 
+  let p1 = log @: prob_of_lbls init_obs init_lbls ffs num_states num_ts in
+  let rec calc_all prev_obs prev_lbls =
+    try
+      let obs = next_window num_atoms prev_obs obs_ic in
+      let lbls = next_labels prev_lbls lbl_ic in
+      let p = log @: prob_of_lbls obs lbls ffs num_states num_ts in
+      p +. (calc_all obs lbls)
+    with End_of_file ->
+      close_in obs_ic;
+      close_in lbl_ic;
+      p1
   in 
-  let data = 
-    List.map (fun tup ->
-      match tup with
-      | (ts, atoms) -> {timestep=ts; atoms=Array.of_list (List.rev atoms)}
-    ) data
-  in Array.of_list (List.rev data)
-
-let print_obs obs = 
-  let data = Array.to_list obs in
-  List.iter (fun tup ->
-    match tup with
-    | {timestep=ts;atoms=aarray} ->
-      List.iter (fun atom -> 
-        match atom with 
-        | {x=a;y=b;z=c;orig_idx=i} ->
-            Printf.printf "Timestep %d, Atom %d: %f,%f,%f\n" ts i a b c
-      ) (Array.to_list aarray)
-  ) data
-
-let print_ffs ffs =
-   List.iter (fun ff ->
-     match ff with
-     |  {weight=w;comment=c} -> Printf.printf "%s: %f\n" c w
-   ) ffs
+  let p = calc_all init_obs init_lbls in
+  print_endline (sof p)
 
 
-let get_potential ffs prev_state curr_state obs t = 
-   List.fold_left (fun acc ff  ->
-     match ff with
-     | {weight=w;fn=f} -> acc +. (w *. (f prev_state curr_state obs t))
-   ) 0. ffs
+let gradient1 obs lbls num_ts num_states f fcs ps =
+  let lblsa = Array.of_list lbls in 
+  let (c,e) = List.fold_left (fun acc t -> match acc with
+     | (curr,exp) ->
+       let prevs = lblsa.(t-2) in
+       let cs    = lblsa.(t-1) in
+       let fval = (f prevs cs obs t) in 
+       let newcurr = curr +. fval  in
+       let p = (get_p num_ts num_states t fcs ps) in
+       let newexp = p *. fval
+       in (newcurr,newexp)
+     ) (0.,0.) (create_range 2 (num_ts-1))
+in ((1.+.c) -. (1.+.e)) -. 2.
 
-let random_weight () = (Random.float 1.) -. 0.5
 
-(* feature functions should only be called starting at t=2 *)
-let build_1state_xffs num_states num_atoms =
-     let nested_list = list_populate (fun on_state ->
-       let newfns = list_populate (fun atom_num ->
-         {
-          comment = "X coordinate";
-          atom_idx = Some atom_num;
-          prev_state=None;
-          curr_state=Some on_state;
-          weight=random_weight ();
-          fn = (fun last curr obs t ->
-                  if curr = on_state then obs.(t-1).atoms.(atom_num).x else 0.)
-         }
-       ) 0 num_atoms
-       in newfns
-     ) 1 num_states 
-   in List.flatten nested_list  
 
-let build_transition_ffs num_states = 
-     let nested_list = list_populate (fun prev_on_state ->
-       let newfns = list_populate (fun on_state ->
-         {
-          comment = "Transition function";
-          atom_idx = None;
-          prev_state=Some prev_on_state;
-          curr_state=Some on_state;
-          weight=random_weight ();
-          fn = (fun last curr obs t ->
-                  if (last = prev_on_state && curr = on_state) 
-                  then 1.
-                  else 0.)
-         }
-       ) 1 num_states
-       in newfns
-     ) 1 num_states 
-   in List.flatten nested_list  
 
-let cpds_of_data ffs num_states num_timesteps obs =   
-  list_populate (fun t ->
-    let data = List.flatten @:
-      list_populate (fun y_last ->
-        let y_last_id = id_of_str @: soi y_last in
-        list_populate (fun y_curr ->
-          let y_curr_id = id_of_str @: soi y_curr in
-          let p = get_potential ffs y_last y_curr obs t in
-          ([|y_last_id;y_curr_id|],p,[||])
-        ) 1 num_states
-      ) 1 num_states
+let gradient2 obs lbls num_ts num_states f fps fcs ps =
+  let lblsa = Array.of_list lbls in 
+  let (c,e) = List.fold_left (fun acc t -> match acc with
+     | (curr,exp) ->
+       let prevs = lblsa.(t-2) in
+       let cs    = lblsa.(t-1) in
+       let fval = (f prevs cs obs t) in 
+       let newcurr = curr +. fval  in
+       let p = (get_p2 num_ts num_states t fps fcs ps) in
+       let newexp = p *. fval
+       in (newcurr,newexp)
+     ) (0.,0.) (create_range 2 (num_ts-1))
+  in ((1.+.c) -. (1.+.e)) -. 2.
+
+
+let gradient_step obs lbls ffs num_ts num_atoms num_states num_examples alpha =
+  let a = infer ffs num_states num_ts obs in
+  let gradient_ff  ff = match ff with
+  | {weight=w;fn=f;prev_state=pso;curr_state=cso} ->
+    match cso with
+    | None -> failwith "error for now"
+    | Some fcs ->
+      match pso with
+      | None -> 
+          let d = gradient1 obs lbls num_ts num_states f fcs a in
+          let pen = w /. (10. *. (foi num_ts)) in
+          let d = d -. pen in 
+          let new_w = w +. (alpha *. d /. num_examples) in
+          { ff with weight=new_w}
+      | Some fps ->
+          let d= gradient2 obs lbls num_ts num_states f fps fcs a in
+          let pen = w /. (10. *. (foi num_ts)) in
+          let d = d -. pen in 
+          let new_w = w +. (alpha *. d /. num_examples) in
+          { ff with weight=new_w}
+  in List.map gradient_ff  ffs
+
+let gradient_sweep obs_file label_file ffs num_ts num_states num_atoms
+num_examples alpha = 
+  let obs_ic = open_in obs_file in
+  let lbl_ic = open_in label_file in
+  let init_obs = read_n_obs obs_ic num_ts num_atoms in 
+  let init_lbls = List.map ios @: read_n_lines num_ts lbl_ic in 
+  let rec calc_all prev_obs prev_lbls prev_ffs  =
+    try
+      let newffs = gradient_step prev_obs prev_lbls prev_ffs num_ts num_atoms num_states
+       num_examples alpha in
+      let obs = next_window num_atoms prev_obs obs_ic in
+      let lbls = next_labels prev_lbls lbl_ic in
+      calc_all obs lbls newffs
+    with End_of_file ->
+      close_in obs_ic;
+      close_in lbl_ic;
+      prev_ffs
+  in  calc_all init_obs init_lbls ffs  
+ 
+let rec gradient_ascent obs_file label_file ffs num_ts num_states num_atoms niter
+nexamples alpha = 
+  match niter with
+  | 0 -> ()
+  | _ ->
+    let newffs = gradient_sweep obs_file label_file ffs num_ts num_states
+    num_atoms nexamples alpha
     in
-    let t_last_id = id_of_str @: soi (t-1) in
-    let t_id = id_of_str @: soi t in
-    {vars=[|t_last_id;t_id|]; backptrs=[||];data}
-  ) 2 (num_timesteps-1)  
-
-
-let to_non_option l = 
-  List.map (fun o -> 
-    match o with
-    | Some f -> f
-    | None -> failwith "Error in query result!"
-  ) l 
-
+    calculate_likelihood obs_file label_file newffs num_ts num_states num_atoms;
+    gradient_ascent obs_file label_file newffs num_ts num_states num_atoms
+    (niter-1) nexamples alpha
 
 let main () =
-  if Array.length Sys.argv <> 2 then
-    Printf.printf "%s file\n" Sys.argv.(0)
+  if Array.length Sys.argv <> 3 then
+    Printf.printf "%s obs_file label_file\n" Sys.argv.(0)
   else
-    let file = Sys.argv.(1) in
-    let obs = read_obs file in
-    let ffs = (build_1state_xffs 5 5) @ (build_transition_ffs 5) in
-    let cpds = cpds_of_data ffs 5 5 obs in
-    let p = {
-      action=Inference;
-      network_file="";
-      cpd_file="";
-      cliquetree_file="cliquetree.txt";
-      queries_file="queries.txt";
-      debug_send=false;
-      print_tree=false;
-      incremental=true;
-      time=false;
-    } in
-    let answers = (to_non_option @: do_inference p cpds) in
-    let a = Array.of_list answers in
-    List.iter (print_endline) (List.map (sof) answers);
-    print_endline @: sof @: get_p2 5 5 5 5 5 a
-
+    let num_ts = 5 in 
+    let num_states = 5 in
+    let num_atoms = 100 in 
+    let obs_file = Sys.argv.(1) in
+    let label_file = Sys.argv.(2) in
+    let ffs = (build_1state_xffs num_states num_atoms) 
+            @ (build_transition_ffs num_states) in
+  
+    calculate_likelihood obs_file label_file ffs num_ts num_states num_atoms;
+    gradient_ascent obs_file label_file ffs num_ts num_states num_atoms 1000
+    100. 0.001 
+    (*gen_labels obs_file ffs num_ts num_states num_atoms*)
 let _ =
   if !Sys.interactive then ()
   else main ()
-
-
-
 

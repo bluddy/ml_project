@@ -121,6 +121,17 @@ let read_file_lines file =
   let ls = List.rev @: read_lines [] in
   close_in in_chan; ls
 
+(* read n lines from file.doesnt handle eof *)
+let read_n_lines n in_chan =
+  let rec read_lines n acc =
+    match n with
+    | 0 -> acc
+    | _ -> let x = input_line in_chan in
+           read_lines (n-1) (x::acc)
+  in
+  let ls = List.rev @: read_lines n [] in
+  ls
+
 let read_file file = String.concat "\n" @: read_file_lines file
 
 let write_file file s =

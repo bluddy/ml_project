@@ -69,6 +69,8 @@ val foldl_until : ('a -> 'b -> ('a, 'a) either_t ) -> 'a -> 'b list -> 'a
 
 val read_file_lines : string -> string list
 
+val read_n_lines : int -> in_channel -> string list
+
 val read_file : string -> string
 
 val write_file : string -> string -> unit

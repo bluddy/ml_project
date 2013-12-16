@@ -91,16 +91,16 @@ let do_inference params cpds =
   let scheme = if params.action=MaxProductInference 
                then MaxProduct else SumProduct in
   let tree = parse_clique_tree params.cliquetree_file in
-  print_endline "parsed clique tree";
+  if params.debug_send then print_endline "parsed clique tree";
   set_tree_sepsets tree;
-  print_endline "set sepsets";
+  if params.debug_send then print_endline "set sepsets";
   let cpd_list = cpds in
-  print_endline "parsed cpds";
+  if params.debug_send then print_endline "parsed cpds";
   let query_list = parse_queries ~scheme params.queries_file in
-  print_endline "parsed queries";
+  if params.debug_send then print_endline "parsed queries";
   let tree = tree_fill_cpds tree cpd_list in
   save_node_cpds tree;
-  print_endline "filled tree with cpds";
+  if params.debug_send then print_endline "filled tree with cpds";
   let p_time1 = Unix.times () in
   let stream_fn tree = 
     upstream tree (fst tree) ~scheme ~print_send:params.debug_send;

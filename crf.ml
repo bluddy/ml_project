@@ -37,8 +37,6 @@ let get_p2 num_ts num_states curr_t prev_s curr_s ps =
   let num_in_front = num_ts*num_states in
   ps.(num_in_front + i)
 
-  
-
 let read_one_obs num_atoms ic : observation = 
   let lines = read_n_lines num_atoms ic in
   let r_comma = Str.regexp "," in
@@ -54,7 +52,7 @@ let read_one_obs num_atoms ic : observation =
   let ts_atom_tup_list  = 
     List.fold_left (fun acc line ->
       let ts, i, x,y,z = read_line line in
-      let newatom = {x=x;y=y;z=z;orig_idx=i} in 
+      let newatom = {x;y;z;orig_idx=i} in 
       match acc with
       | []  -> [(ts, [newatom])]
       | (old_ts, alist)::xs when ts=old_ts ->

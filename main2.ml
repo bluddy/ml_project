@@ -175,7 +175,7 @@ let gradient_ascent p ffs ll =
 
 let sort_ffs ffs =
   List.sort (fun {weight=w1;_} {weight=w2;_} -> 
-    if abs_float(w1) > abs_float(w2) then (-1) else 1
+    if (w1) < (w2) then (-1) else 1
   ) ffs
 
 let params = {

@@ -158,6 +158,26 @@ let build_transition_ffs num_states =
     ) 1 num_states
   ) 1 num_states 
 
+let build_1state_cont num_states num_atoms =
+     List.flatten @:
+     list_populate (fun on_state ->
+       list_populate (fun atom_num ->
+         {
+          comment = Printf.sprintf
+            "On state %i relative change atom[%i].x" on_state atom_num;
+          atom_idx = Some atom_num;
+          prev_state=None;
+          curr_state=Some on_state;
+          weight=random_weight ();
+          fn = fun last curr obs t ->
+                if curr = on_state then
+                  let cur_val = obs.(t-2).atoms.(atom_num).x in
+                  (obs.(t-1).atoms.(atom_num).x -. cur_val) /. cur_val
+                else 0.
+         }
+       ) 0 num_atoms
+     ) 1 num_states 
+
 (* build initial cpds for our data *)
 let cpds_of_data ffs num_states num_timesteps obs =   
   list_populate (fun t ->

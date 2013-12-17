@@ -168,10 +168,15 @@ let gradient_ascent p ffs ll =
       let ll = calculate_likelihood p.input_file p.label_file newffs p.window
         p.num_states p.num_atoms (p.queries, p.clique_tree) p.sigma_squared
       in
-      if ll -. last_ll <= p.epsilon then ffs else begin
+      if abs_float(ll -. last_ll) <= p.epsilon then ffs else begin
       print_endline @: sof ll;
       loop newffs ll (i-1) end
   in loop ffs ll p.num_iter 
+
+let sort_ffs ffs =
+  List.sort (fun {weight=w1;_} {weight=w2;_} -> 
+    if abs_float(w1) > abs_float(w2) then (-1) else 1
+  ) ffs
 
 let params = {
   input_file = "";
@@ -248,7 +253,7 @@ let main () =
       num_states num_atoms (p.queries, p.clique_tree) p.sigma_squared
     in print_endline @: sof ll;
     let newffs = gradient_ascent params ffs ll in
-    print_ffs newffs
+    print_ffs @: sort_ffs newffs
 
   | GenLabels ->
     let ffs = build_1state_xffs num_states num_atoms 

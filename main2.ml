@@ -186,7 +186,7 @@ let params = {
   queries = [];
   clique_tree= CliqueTree.empty_tree ();
   sigma_squared=Some 1.;
-  epsilon=0.00000001;
+  epsilon=10e-16;
 }
 
 let main () =
@@ -242,7 +242,7 @@ let main () =
     let ffs =  build_1state_xffs num_states num_atoms 
              @ build_1state_xffs2 num_states num_atoms 
              @ build_transition_ffs num_states
-             @ build_1state_cont num_states num_atoms
+             (*@ build_1state_cont num_states num_atoms*)
     in
     let ll = calculate_likelihood obs_file label_file ffs window
       num_states num_atoms (p.queries, p.clique_tree) p.sigma_squared

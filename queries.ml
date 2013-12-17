@@ -185,6 +185,36 @@ let apply_evidence_to_cpds ~full cpd_list given =
     cpd'::acc
   ) [] cpd_list
 
+(* generate all the queries we need for the window *)
+let gen_queries num_states window =
+  let a =
+    List.flatten @:
+    list_populate (fun i ->
+      list_populate (fun j ->
+        [i,j]
+      ) 1 num_states
+    ) 1 window
+  in
+  let b = 
+    if num_states >= 2 then
+      List.flatten @: List.flatten @:
+      list_populate (fun i -> (* sliding pair for cliques *)
+        list_populate (fun j -> (* first state *)
+          list_populate (fun k -> (* snd state *)
+            [i-1, j; i, k]
+          ) 1 num_states
+        ) 1 num_states
+      ) 2 (window-1)
+    else []
+  in 
+  let qs = a @ b in
+  (* convert to query format (including stringification) *)
+  List.map (fun assigns -> 
+    let assigns = List.map (fun (x,y) -> soi x, soi y) assigns in
+    let p_of = id_of_str_pairs assigns in
+    {p_of;given=[]}
+  ) qs
+
 
 
 

@@ -16,6 +16,7 @@ type params = {
   mutable alpha : float;
   mutable num_iter : int;
   mutable action : action;
+  mutable queries : Queries.query list;
 }
 
 let next_window num_atoms last_obs in_chan : observation array = 
@@ -27,18 +28,19 @@ let next_window num_atoms last_obs in_chan : observation array =
   last_obs
 
 (* calculate joint p(ys|x) by multiplying factors over all data *)
-let calculate_likelihood obs_file label_file ffs window num_states num_atoms = 
+let calculate_likelihood
+  obs_file label_file ffs window num_states num_atoms queries = 
   let obs_ic = open_in obs_file in
   let lbl_ic = open_in label_file in
   let init_obs = read_n_obs obs_ic window num_atoms in 
   let init_lbls = List.map ios @: read_n_lines window lbl_ic in 
-  let p1 = prob_of_lbls init_obs init_lbls ffs num_states window in
+  let p1 = prob_of_lbls init_obs init_lbls ffs num_states window queries in
   (* slide the window and complete calculation *)
   let rec loop acc prev_obs prev_lbls =
     try
       let obs = next_window num_atoms prev_obs obs_ic in
       let lbls = next_labels prev_lbls lbl_ic in
-      let p = prob_of_lbls obs lbls ffs num_states window in
+      let p = prob_of_lbls obs lbls ffs num_states window queries in
       loop (p +. acc) obs lbls
     with End_of_file ->
       close_in obs_ic;
@@ -50,17 +52,17 @@ let calculate_likelihood obs_file label_file ffs window num_states num_atoms =
 let gradient1 obs lbls window num_states f fcs ps =
   let lblsa = Array.of_list lbls in 
   let c,e = List.fold_left (fun (curr,exp) t -> 
-      let prevs = lblsa.(t-2) in
-      let cs    = lblsa.(t-1) in
-      let fval = f prevs cs obs t in 
-      let newcurr = curr +. fval  in
-      let p = get_p window num_states t fcs ps in
-      let otherf = f (-1) fcs obs t in 
-      (* debug *)
-      (*Printf.eprintf "gradient1: fval(%f), otherf(%f), p(%f)\n" fval otherf p;*)
-      let newexp = exp +. p *. otherf in
-      (newcurr,newexp)
-    ) (0.,0.) (create_range 2 (window-1))
+    let prevs = lblsa.(t-2) in
+    let cs    = lblsa.(t-1) in
+    let fval = f prevs cs obs t in 
+    let newcurr = curr +. fval  in
+    let p = get_p window num_states t fcs ps in
+    let otherf = f (-1) fcs obs t in 
+    (* debug *)
+    (*Printf.eprintf "gradient1: fval(%f), otherf(%f), p(%f)\n" fval otherf p;*)
+    let newexp = exp +. p *. otherf in
+    (newcurr,newexp)
+  ) (0.,0.) (create_range 2 (window-1))
   in
   (* debug *)
   (*Printf.eprintf "gradient1: c(%f), e(%f)\n" c e;*)
@@ -69,25 +71,25 @@ let gradient1 obs lbls window num_states f fcs ps =
 let gradient2 obs lbls window num_states f fps fcs ps =
   let lblsa = Array.of_list lbls in 
   let c,e = List.fold_left (fun (curr,exp) t ->
-      let prevs = lblsa.(t-2) in
-      let cs    = lblsa.(t-1) in
-      let fval = f prevs cs obs t in 
-      let newcurr = curr +. fval  in
-      let p = get_p2 window num_states t fps fcs ps in
-      let otherf = f fps fcs obs t in
-      (* debug *)
-      (*Printf.eprintf "gradient2: fval(%f), otherf(%f), p(%f)\n" fval otherf p;*)
-      let newexp = exp +. p *. otherf in
-      (newcurr,newexp)
-    ) (0.,0.) (create_range 2 (window-1))
+    let prevs = lblsa.(t-2) in
+    let cs    = lblsa.(t-1) in
+    let fval = f prevs cs obs t in 
+    let newcurr = curr +. fval  in
+    let p = get_p2 window num_states t fps fcs ps in
+    let otherf = f fps fcs obs t in
+    (* debug *)
+    (*Printf.eprintf "gradient2: fval(%f), otherf(%f), p(%f)\n" fval otherf p;*)
+    let newexp = exp +. p *. otherf in
+    (newcurr,newexp)
+  ) (0.,0.) (create_range 2 (window-1))
   in
   (* debug *)
   (*Printf.eprintf "gradient2: c(%f), e(%f)\n" c e;*)
   c -. e 
 
 (* return list of gradients for the ffs *)
-let gradient_step obs lbls ffs window num_states =
-  let ps = infer ffs num_states window obs in
+let gradient_step queries obs lbls ffs window num_states =
+  let ps = infer queries ffs num_states window obs in
   (* debug *)
   (*Array.iter (fun p -> Printf.eprintf "%f, " p) ps;*)
   (*Printf.eprintf "\n";*)
@@ -117,7 +119,7 @@ let gradient_sweep p ffs =
   in
   let rec loop prev_obs prev_lbls acc_grads =
       let grads = gradient_step
-        prev_obs prev_lbls ffs p.window p.num_states in
+        p.queries prev_obs prev_lbls ffs p.window p.num_states in
       let acc_grads' = List.map2 (+.) grads acc_grads in
       try
         let obs  = next_window p.num_atoms prev_obs obs_ic in
@@ -132,12 +134,12 @@ let gradient_sweep p ffs =
   let ffs' = List.map2 (fun grad ff ->
     let weight = ff.weight +. (grad *. p.alpha *. inv_num_slides) in
     (* debug *)
-    Printf.eprintf "%f, " weight;
-    {ff with weight}
+    (*Printf.eprintf "%f, " weight;*)
+    (*{ff with weight}*)
   ) grads ffs
   in
   (* debug *)
-  Printf.eprintf "\n";
+  (*Printf.eprintf "\n";*)
   ffs'
  
 let gradient_ascent p ffs =
@@ -146,7 +148,7 @@ let gradient_ascent p ffs =
     | i ->
       let newffs = gradient_sweep p ffs in
       let ll = calculate_likelihood
-        p.input_file p.label_file newffs p.window p.num_states p.num_atoms
+        p.input_file p.label_file newffs p.window p.num_states p.num_atoms p.queries
       in
       print_endline @: sof ll;
       loop newffs (i-1)
@@ -162,6 +164,7 @@ let params = {
   alpha = 0.001;
   num_iter = 1000;
   action = GradientAscent;
+  queries = [];
 }
 
 let main () =
@@ -197,6 +200,10 @@ let main () =
     p.num_states, p.window, p.num_atoms, p.input_file,
     p.alpha, p.num_iter
   in 
+  (* generate queries for whoever needs them later *)
+  let qs = Queries.gen_queries p.num_states p.window in
+  p.queries <- qs;
+
   match params.action with
   | GradientAscent ->
     let label_file = params.label_file in
@@ -207,7 +214,7 @@ let main () =
              @ build_transition_ffs num_states
     in
     let ll =
-      calculate_likelihood obs_file label_file ffs window num_states num_atoms
+      calculate_likelihood obs_file label_file ffs window num_states num_atoms p.queries
     in print_endline @: sof ll;
     gradient_ascent params ffs
 
@@ -216,14 +223,14 @@ let main () =
             @ build_1state_xffs2 num_states num_atoms 
             @ build_transition_ffs num_states
     in
-    gen_labels obs_file ffs window num_states num_atoms
+    gen_labels obs_file ffs window num_states num_atoms p.queries
 
   | TestInference ->
     let ffs = build_transition_ffs num_states in
     let lambdas=[-0.622;2.59; -2.35; 0.777] in
     let ffs = 
       List.map2 (fun ff weight -> {ff with weight}) ffs lambdas in
-    let ps = infer ffs 2 3 [||] in
+    let ps = infer p.queries ffs 2 3 [||] in
     Array.iter (fun p -> Printf.printf "%f\n" p) ps
     
 let _ =

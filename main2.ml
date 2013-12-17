@@ -132,12 +132,12 @@ let gradient_sweep p ffs =
   let ffs' = List.map2 (fun grad ff ->
     let weight = ff.weight +. (grad *. p.alpha *. inv_num_slides) in
     (* debug *)
-    (*Printf.eprintf "%f, " weight;*)
+    Printf.eprintf "%f, " weight;
     {ff with weight}
   ) grads ffs
   in
   (* debug *)
-  (*Printf.eprintf "\n";*)
+  Printf.eprintf "\n";
   ffs'
  
 let gradient_ascent p ffs =
@@ -202,10 +202,9 @@ let main () =
     let label_file = params.label_file in
     if label_file = "" then print_endline usage_msg else
     (* build feature functions *)
-    let ffs = 
-             (*build_1state_xffs num_states num_atoms *)
-            (*@ build_1state_xffs2 num_states num_atoms *)
-             build_transition_ffs num_states
+    let ffs =  build_1state_xffs num_states num_atoms 
+             @ build_1state_xffs2 num_states num_atoms 
+             @ build_transition_ffs num_states
     in
     let ll =
       calculate_likelihood obs_file label_file ffs window num_states num_atoms
@@ -226,11 +225,6 @@ let main () =
       List.map2 (fun ff weight -> {ff with weight}) ffs lambdas in
     let ps = infer ffs 2 3 [||] in
     Array.iter (fun p -> Printf.printf "%f\n" p) ps
-    (*print_endline (sof @: get_p2 3 2 2 1 2 ps);*)
-    (*print_endline (sof @: get_p 3 2 2 1 ps)*)
-(*let get_p2 num_ts num_states curr_t prev_s curr_s ps =*)
-(*let get_p num_ts num_states curr_t curr_s ps =*)
-
     
 let _ =
   if !Sys.interactive then ()

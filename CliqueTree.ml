@@ -21,6 +21,10 @@ let empty_edge () = {sepset=[||]; edge_cpd=empty_cpd (); msg_waiting=[]}
 
 type tree = node * (int * int, edge) Hashtbl.t 
 
+let empty_tree () =
+  {id=0; scope=[||]; edges=[]; node_cpd=empty_cpd (); saved_cpd=empty_cpd ()}, 
+  Hashtbl.create 10
+
 let lookup_edge ((_,h) : tree) (node1, node2) =
   let key = if node1.id > node2.id then node2.id, node1.id else node1.id, node2.id
   in
@@ -80,9 +84,8 @@ let string_of_tree ((_, h) as tree) =
     acc_string^Printf.sprintf "edge %d-%d: %s\n" node1 node2 (string_of_edge edge)
   ) h ""
 
-let parse_clique_tree file =
-  let f = read_file file in
-  let ls = lines f in
+let parse_clique_tree str =
+  let ls = lines str in
   let num_nodes = int_of_string @: hd ls in
   let ls = list_drop 1 ls in
   let node_lines = list_take num_nodes ls in
@@ -114,6 +117,10 @@ let parse_clique_tree file =
     | _ -> failwith "Bad split"
   ) edge_lines;
   tree
+
+let clique_tree_of_file file = 
+  let f = read_file file in
+  parse_clique_tree f
 
 (* find the cpds relating to a node and multiply them *)
 let cpd_of_node node cpd_set =
@@ -280,4 +287,22 @@ let normalize_tree tree =
     node.node_cpd <- cpd;
     ())
   () tree
+
+let clique_tree_string_of_crf window =
+  if window < 2 then invalid_arg "window must be >= 2" else
+  let list_cliques =
+    list_populate (fun i ->
+      (i-1, i)
+    ) 2 (window-1)
+  in
+  let string_of_pair (a,b) = Printf.sprintf "%d,%d" a b in
+  Printf.sprintf "%d\n" (window-1)^
+  (String.concat "\n" @:
+    List.map string_of_pair list_cliques)^"\n"^
+  fst @: List.fold_left (fun (acc,last) cur ->
+    acc^Printf.sprintf "%s -- %s\n" (string_of_pair last) (string_of_pair cur), cur
+  ) ("", hd list_cliques) (tl list_cliques)
+
+
+
 

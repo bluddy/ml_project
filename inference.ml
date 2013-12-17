@@ -86,13 +86,12 @@ let compute_joint cpd_list =
 
 
 
-let do_inference params cpds query_list =  
+let do_inference params cpds query_list tree =  
 
   let scheme = if params.action=MaxProductInference 
                then MaxProduct else SumProduct in
-  let tree = parse_clique_tree params.cliquetree_file in
-  if params.debug_send then print_endline "parsed clique tree";
-  set_tree_sepsets tree;
+  (*let tree = parse_clique_tree params.cliquetree_file in*)
+  reset_edges_all tree;
   if params.debug_send then print_endline "set sepsets";
   let cpd_list = cpds in
   if params.debug_send then print_endline "parsed cpds";
@@ -115,19 +114,19 @@ let do_inference params cpds query_list =
     process_queries ~incremental:params.incremental stream_fn tree query_list in
   answers
 
-let infer queries ffs num_states num_ts obs : float array = 
+let infer (queries, clique_tree) ffs num_states num_ts obs : float array = 
   let cpds = Crf.cpds_of_data ffs num_states num_ts obs in
   let p = {
     action=Inference;
     network_file="";
     cpd_file="";
-    cliquetree_file="cliquetree.txt";
+    cliquetree_file="";
     queries_file="";
     debug_send=false;
     print_tree=false;
     incremental=true;
     time=false;
   } in
-  let answers = List.map unwrap_some @: do_inference p cpds queries in
+  let answers = List.map unwrap_some @: do_inference p cpds queries clique_tree in
   Array.of_list answers
 

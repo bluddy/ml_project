@@ -35,8 +35,8 @@ let sample_next_state num_states num_ts curr_t last_state a =
   sample_state pdf
 
  
-let sample_initial_labels ffs num_states num_ts init_obs queries = 
-  let a = infer queries ffs num_states num_ts init_obs in
+let sample_initial_labels ffs num_states num_ts init_obs infdata = 
+  let a = infer infdata ffs num_states num_ts init_obs in
   (* s1 *)
   let s1pdf = normalize_list @: list_populate (fun n ->
       get_p num_ts num_states 1 n a
@@ -47,32 +47,32 @@ let sample_initial_labels ffs num_states num_ts init_obs queries =
     | prev_state::xs -> (sample_next_state num_states num_ts t prev_state a)::acc
   ) [s1] (create_range 2 (num_ts -1))
   
-let sample_next_labels ffs num_states num_ts prev_labels new_obs queries =
-  let a = infer queries ffs num_states num_ts new_obs in
+let sample_next_labels ffs num_states num_ts prev_labels new_obs infdata =
+  let a = infer infdata ffs num_states num_ts new_obs in
   let labels = List.rev @: tl prev_labels in
   let newlast = sample_next_state num_states num_ts num_ts (hd labels) a in
   List.rev @: newlast::labels
 
 let rec sample_until_eof 
-  ic ffs num_atoms num_states prev_labels prev_obs num_ts queries =
+  ic ffs num_atoms num_states prev_labels prev_obs num_ts infdata =
   try
    let obs = next_window num_atoms prev_obs ic in
-   let labels = sample_next_labels ffs num_states num_ts prev_labels obs queries in
+   let labels = sample_next_labels ffs num_states num_ts prev_labels obs infdata in
    let last_label = hd @: List.rev labels in
    print_endline (soi last_label);
-   sample_until_eof ic ffs num_atoms num_states labels obs num_ts queries
+   sample_until_eof ic ffs num_atoms num_states labels obs num_ts infdata
   with End_of_file -> ()
 
-let gen_labels file ffs window num_states num_atoms queries = 
+let gen_labels file ffs window num_states num_atoms infdata = 
   let ic = open_in file in
   let init_obs = read_n_obs ic window num_atoms in
-  let labels = sample_initial_labels ffs num_states window init_obs queries in
+  let labels = sample_initial_labels ffs num_states window init_obs infdata in
   List.iter (fun state -> print_endline (soi state)) labels;
-  sample_until_eof ic ffs num_atoms num_states labels init_obs window queries;
+  sample_until_eof ic ffs num_atoms num_states labels init_obs window infdata;
   close_in ic
 
-let prob_of_lbls obs lbls ffs num_states num_ts queries = 
-  let a = infer queries ffs num_states num_ts obs in
+let prob_of_lbls obs lbls ffs num_states num_ts infdata = 
+  let a = infer infdata ffs num_states num_ts obs in
   (*let p1 = log @: get_p num_ts num_states 1 state a in*)
   let p1 = 0. in (* log 1 *)
   (* look at a pair at a time: prev and cur *)

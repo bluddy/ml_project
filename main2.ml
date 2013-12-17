@@ -17,6 +17,7 @@ type params = {
   mutable num_iter : int;
   mutable action : action;
   mutable queries : Queries.query list;
+  mutable clique_tree : CliqueTree.tree;
 }
 
 let next_window num_atoms last_obs in_chan : observation array = 
@@ -29,18 +30,18 @@ let next_window num_atoms last_obs in_chan : observation array =
 
 (* calculate joint p(ys|x) by multiplying factors over all data *)
 let calculate_likelihood
-  obs_file label_file ffs window num_states num_atoms queries = 
+  obs_file label_file ffs window num_states num_atoms infdata = 
   let obs_ic = open_in obs_file in
   let lbl_ic = open_in label_file in
   let init_obs = read_n_obs obs_ic window num_atoms in 
   let init_lbls = List.map ios @: read_n_lines window lbl_ic in 
-  let p1 = prob_of_lbls init_obs init_lbls ffs num_states window queries in
+  let p1 = prob_of_lbls init_obs init_lbls ffs num_states window infdata in
   (* slide the window and complete calculation *)
   let rec loop acc prev_obs prev_lbls =
     try
       let obs = next_window num_atoms prev_obs obs_ic in
       let lbls = next_labels prev_lbls lbl_ic in
-      let p = prob_of_lbls obs lbls ffs num_states window queries in
+      let p = prob_of_lbls obs lbls ffs num_states window infdata in
       loop (p +. acc) obs lbls
     with End_of_file ->
       close_in obs_ic;
@@ -88,8 +89,8 @@ let gradient2 obs lbls window num_states f fps fcs ps =
   c -. e 
 
 (* return list of gradients for the ffs *)
-let gradient_step queries obs lbls ffs window num_states =
-  let ps = infer queries ffs num_states window obs in
+let gradient_step infdata obs lbls ffs window num_states =
+  let ps = infer infdata ffs num_states window obs in
   (* debug *)
   (*Array.iter (fun p -> Printf.eprintf "%f, " p) ps;*)
   (*Printf.eprintf "\n";*)
@@ -118,8 +119,8 @@ let gradient_sweep p ffs =
   let grads_init = list_populate (fun _ -> 0.) 0 (List.length ffs)
   in
   let rec loop prev_obs prev_lbls acc_grads =
-      let grads = gradient_step
-        p.queries prev_obs prev_lbls ffs p.window p.num_states in
+      let grads = gradient_step (p.queries, p.clique_tree) prev_obs
+        prev_lbls ffs p.window p.num_states in
       let acc_grads' = List.map2 (+.) grads acc_grads in
       try
         let obs  = next_window p.num_atoms prev_obs obs_ic in
@@ -147,8 +148,8 @@ let gradient_ascent p ffs =
     | 0 -> ()
     | i ->
       let newffs = gradient_sweep p ffs in
-      let ll = calculate_likelihood
-        p.input_file p.label_file newffs p.window p.num_states p.num_atoms p.queries
+      let ll = calculate_likelihood p.input_file p.label_file newffs p.window
+        p.num_states p.num_atoms (p.queries, p.clique_tree)
       in
       print_endline @: sof ll;
       loop newffs (i-1)
@@ -165,6 +166,7 @@ let params = {
   num_iter = 1000;
   action = GradientAscent;
   queries = [];
+  clique_tree= CliqueTree.empty_tree ();
 }
 
 let main () =
@@ -203,6 +205,10 @@ let main () =
   (* generate queries for whoever needs them later *)
   let qs = Queries.gen_queries p.num_states p.window in
   p.queries <- qs;
+  (* create a clique tree for inference *)
+  let clique_t_s = CliqueTree.clique_tree_string_of_crf p.window in
+  p.clique_tree <- CliqueTree.parse_clique_tree clique_t_s;
+  CliqueTree.set_tree_sepsets p.clique_tree;
 
   match params.action with
   | GradientAscent ->
@@ -213,8 +219,8 @@ let main () =
              @ build_1state_xffs2 num_states num_atoms 
              @ build_transition_ffs num_states
     in
-    let ll =
-      calculate_likelihood obs_file label_file ffs window num_states num_atoms p.queries
+    let ll = calculate_likelihood 
+      obs_file label_file ffs window num_states num_atoms (p.queries, p.clique_tree)
     in print_endline @: sof ll;
     gradient_ascent params ffs
 
@@ -223,14 +229,14 @@ let main () =
             @ build_1state_xffs2 num_states num_atoms 
             @ build_transition_ffs num_states
     in
-    gen_labels obs_file ffs window num_states num_atoms p.queries
+    gen_labels obs_file ffs window num_states num_atoms (p.queries, p.clique_tree)
 
   | TestInference ->
     let ffs = build_transition_ffs num_states in
     let lambdas=[-0.622;2.59; -2.35; 0.777] in
     let ffs = 
       List.map2 (fun ff weight -> {ff with weight}) ffs lambdas in
-    let ps = infer p.queries ffs 2 3 [||] in
+    let ps = infer (p.queries, p.clique_tree) ffs 2 3 [||] in
     Array.iter (fun p -> Printf.printf "%f\n" p) ps
     
 let _ =

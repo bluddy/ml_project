@@ -97,11 +97,14 @@ let do_inference params cpds =
   let cpd_list = cpds in
   if params.debug_send then print_endline "parsed cpds";
   let query_list = parse_queries ~scheme params.queries_file in
+  (* debug queries *)
+  (*let queries_s = String.concat "\n" @: List.map string_of_query query_list in*)
+  (*Printf.printf "queries:\n%s\n" queries_s;*)
   if params.debug_send then print_endline "parsed queries";
   let tree = tree_fill_cpds tree cpd_list in
   save_node_cpds tree;
   if params.debug_send then print_endline "filled tree with cpds";
-  let p_time1 = Unix.times () in
+
   let stream_fn tree = 
     upstream tree (fst tree) ~scheme ~print_send:params.debug_send;
     if params.debug_send then print_endline "Downstream...";
@@ -111,7 +114,6 @@ let do_inference params cpds =
   let answers = 
     if params.debug_send then print_endline "\nWith evidence:";
     process_queries ~incremental:params.incremental stream_fn tree query_list in
-  let p_time2 = Unix.times () in
   answers
 
 let infer ffs num_states num_ts obs : float array = 

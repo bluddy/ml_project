@@ -131,15 +131,12 @@ let parse_cpd file =
 let cpd_find_idxs cpd (var_names:id list) = 
   let h = Hashtbl.create 10 in
   Array.iteri (fun i var -> Hashtbl.add h var i) cpd.vars;
-  List.fold_left (fun acc var ->
-    Hashtbl.find h var::acc)
-    []
-    var_names
+  List.map (fun var -> Hashtbl.find h var) var_names
 
 let cpd_find_idxs_arr cpd (var_names:id array) = 
   let h = Hashtbl.create 10 in
   Array.iteri (fun i var -> Hashtbl.add h var i) cpd.vars;
-  Array.fold_left (fun acc var ->
+  List.rev @: Array.fold_left (fun acc var ->
     Hashtbl.find h var::acc)
     []
     var_names

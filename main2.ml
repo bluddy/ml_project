@@ -18,6 +18,7 @@ type params = {
   mutable action : action;
   mutable queries : Queries.query list;
   mutable clique_tree : CliqueTree.tree;
+  mutable sigma_squared : float option;
 }
 
 let next_window num_atoms last_obs in_chan : observation array = 
@@ -30,7 +31,7 @@ let next_window num_atoms last_obs in_chan : observation array =
 
 (* calculate joint p(ys|x) by multiplying factors over all data *)
 let calculate_likelihood
-  obs_file label_file ffs window num_states num_atoms infdata = 
+  obs_file label_file ffs window num_states num_atoms infdata sigma_sq = 
   let obs_ic = open_in obs_file in
   let lbl_ic = open_in label_file in
   let init_obs = read_n_obs obs_ic window num_atoms in 
@@ -48,7 +49,17 @@ let calculate_likelihood
       close_in lbl_ic;
       acc
   in 
-  loop p1 init_obs init_lbls
+  let unreg = loop p1 init_obs init_lbls in
+  match sigma_sq with
+  | None    -> unreg
+  | Some s2 ->
+    let sig_factor = 1. /. (2. *. s2) in
+    (* regularize the log likelihood *)
+    let regularizer = 
+      List.fold_left (fun agg ff ->
+        agg +. ff.weight *. ff.weight *. sig_factor
+      ) 0. ffs
+    in unreg -. regularizer
 
 let gradient1 obs lbls window num_states f fcs ps =
   let lblsa = Array.of_list lbls in 
@@ -132,8 +143,13 @@ let gradient_sweep p ffs =
         acc_grads'
   in
   let grads = loop init_obs init_lbls grads_init in
+  let inv_sigma_sq = match p.sigma_squared with
+    | None    -> 0.
+    | Some s2 -> 1. /. s2
+  in
   let ffs' = List.map2 (fun grad ff ->
-    let weight = ff.weight +. (grad *. p.alpha *. inv_num_slides) in
+    let weight = ff.weight +. (grad *. p.alpha *. inv_num_slides) -.
+      ff.weight *. inv_sigma_sq in
     (* debug *)
     (*Printf.eprintf "%f, " weight;*)
     {ff with weight}
@@ -149,7 +165,7 @@ let gradient_ascent p ffs =
     | i ->
       let newffs = gradient_sweep p ffs in
       let ll = calculate_likelihood p.input_file p.label_file newffs p.window
-        p.num_states p.num_atoms (p.queries, p.clique_tree)
+        p.num_states p.num_atoms (p.queries, p.clique_tree) p.sigma_squared
       in
       print_endline @: sof ll;
       loop newffs (i-1)
@@ -167,6 +183,7 @@ let params = {
   action = GradientAscent;
   queries = [];
   clique_tree= CliqueTree.empty_tree ();
+  sigma_squared=Some 1.;
 }
 
 let main () =
@@ -189,6 +206,10 @@ let main () =
         "alpha     Set alpha";
     "--iter", Arg.Int (fun i -> params.num_iter <- i),
         "iterations     Set the number of iterations";
+    "--sigma", Arg.Float (fun f -> params.sigma_squared <- Some f),
+        "sigma square     Set sigma squared";
+    "--no-sigma", Arg.Unit (fun _ -> params.sigma_squared <- None),
+        "sigma square     Don't use sigma squared";
   ] in
   let usage_msg =
     Printf.sprintf "%s obs_file [options]" Sys.argv.(0) in
@@ -219,8 +240,8 @@ let main () =
              @ build_1state_xffs2 num_states num_atoms 
              @ *) build_transition_ffs num_states
     in
-    let ll = calculate_likelihood 
-      obs_file label_file ffs window num_states num_atoms (p.queries, p.clique_tree)
+    let ll = calculate_likelihood obs_file label_file ffs window
+      num_states num_atoms (p.queries, p.clique_tree) p.sigma_squared
     in print_endline @: sof ll;
     let newffs = gradient_ascent params ffs in
     print_ffs newffs

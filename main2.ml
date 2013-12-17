@@ -4,7 +4,7 @@ open Cpd
 open Inference
 open Gen_labels
 
-type action = GradientAscent | GenLabels
+type action = GradientAscent | GenLabels | TestInference
 
 type params = {
   mutable input_file : string;
@@ -12,7 +12,7 @@ type params = {
   mutable window : int;
   mutable ts : int;
   mutable num_atoms : int;
-  num_states : int;
+  mutable num_states : int;
   mutable alpha : float;
   mutable num_iter : int;
   mutable action : action;
@@ -32,13 +32,13 @@ let calculate_likelihood obs_file label_file ffs window num_states num_atoms =
   let lbl_ic = open_in label_file in
   let init_obs = read_n_obs obs_ic window num_atoms in 
   let init_lbls = List.map ios @: read_n_lines window lbl_ic in 
-  let p1 = log @: prob_of_lbls init_obs init_lbls ffs num_states window in
+  let p1 = prob_of_lbls init_obs init_lbls ffs num_states window in
   (* slide the window and complete calculation *)
   let rec loop acc prev_obs prev_lbls =
     try
       let obs = next_window num_atoms prev_obs obs_ic in
       let lbls = next_labels prev_lbls lbl_ic in
-      let p = log @: prob_of_lbls obs lbls ffs num_states window in
+      let p = prob_of_lbls obs lbls ffs num_states window in
       loop (p +. acc) obs lbls
     with End_of_file ->
       close_in obs_ic;
@@ -116,17 +116,17 @@ let gradient_sweep p ffs =
   let grads_init = list_populate (fun _ -> 0.) 0 (List.length ffs)
   in
   let rec loop prev_obs prev_lbls acc_grads =
-    try
       let grads = gradient_step
         prev_obs prev_lbls ffs p.window p.num_states in
       let acc_grads' = List.map2 (+.) grads acc_grads in
-      let obs = next_window p.num_atoms prev_obs obs_ic in
-      let lbls = next_labels prev_lbls lbl_ic in
-      loop obs lbls acc_grads'
-    with End_of_file ->
-      close_in obs_ic;
-      close_in lbl_ic;
-      acc_grads
+      try
+        let obs  = next_window p.num_atoms prev_obs obs_ic in
+        let lbls = next_labels prev_lbls lbl_ic in
+        loop obs lbls acc_grads'
+      with End_of_file ->
+        close_in obs_ic;
+        close_in lbl_ic;
+        acc_grads'
   in
   let grads = loop init_obs init_lbls grads_init in
   let ffs' = List.map2 (fun grad ff ->
@@ -174,8 +174,12 @@ let main () =
         "timesteps           Set the number of total timesteps";
     "--atoms", Arg.Int (fun i -> params.num_atoms <- i),
         "atoms     Set the number of atoms";
+    "--states", Arg.Int (fun i -> params.num_states <- i),
+        "states     Set the number of states";
     "--gen_labels", Arg.Unit (fun _ -> params.action <- GenLabels),
         "gen_labels     Generate labels for the data";
+    "--test_inference", Arg.Unit (fun _ -> params.action <- TestInference),
+        "test inference     Test inference";
     "--alpha", Arg.Float (fun f -> params.alpha <- f),
         "alpha     Set alpha";
     "--iter", Arg.Int (fun i -> params.num_iter <- i),
@@ -198,9 +202,10 @@ let main () =
     let label_file = params.label_file in
     if label_file = "" then print_endline usage_msg else
     (* build feature functions *)
-    let ffs = build_1state_xffs num_states num_atoms 
-            @ build_1state_xffs2 num_states num_atoms 
-            @ build_transition_ffs num_states
+    let ffs = 
+             (*build_1state_xffs num_states num_atoms *)
+            (*@ build_1state_xffs2 num_states num_atoms *)
+             build_transition_ffs num_states
     in
     let ll =
       calculate_likelihood obs_file label_file ffs window num_states num_atoms
@@ -213,6 +218,19 @@ let main () =
             @ build_transition_ffs num_states
     in
     gen_labels obs_file ffs window num_states num_atoms
+
+  | TestInference ->
+    let ffs = build_transition_ffs num_states in
+    let lambdas=[-0.622;2.59; -2.35; 0.777] in
+    let ffs = 
+      List.map2 (fun ff weight -> {ff with weight}) ffs lambdas in
+    let ps = infer ffs 2 3 [||] in
+    Array.iter (fun p -> Printf.printf "%f\n" p) ps
+    (*print_endline (sof @: get_p2 3 2 2 1 2 ps);*)
+    (*print_endline (sof @: get_p 3 2 2 1 ps)*)
+(*let get_p2 num_ts num_states curr_t prev_s curr_s ps =*)
+(*let get_p num_ts num_states curr_t curr_s ps =*)
+
     
 let _ =
   if !Sys.interactive then ()

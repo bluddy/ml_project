@@ -10,8 +10,17 @@ type query = {
 }
 
 let string_of_assignments ss =
-  let ss = List.map (fun (k,v) -> Printf.sprintf "%s = %s" k v) ss in
+  let ss = List.map (fun (k,v) ->
+    Printf.sprintf "%s=%s" (str_of_id k) (str_of_id v)
+  ) ss in
   String.concat ", " ss
+
+let string_of_query q =
+  let given_s = 
+    if q.given = [] then ""
+    else " | "^string_of_assignments q.given
+  in
+  "p("^string_of_assignments q.p_of^given_s^")"
 
 let parse_queries ~scheme file : query list =
   let get_key_val str = 
@@ -71,12 +80,19 @@ let find_answer tree query =
     tree_fold (fun _ node ->
       let _, _, q_diff_idx, node_diff_idx = intersect q_vars_arr node.node_cpd.vars in
       if q_diff_idx <> [] then None
-      else 
+      else begin
+        (*Printf.printf "In find_answer:\n";*)
+        (*Printf.printf "cpd:\n%s\nq_vars: %s\nq_values: %s\n" (string_of_cpd node.node_cpd) (String.concat ", " @: str_of_id_many q_vars) (String.concat ", " @: str_of_id_many q_values);*)
         let cpd = marginalize node.node_cpd node_diff_idx in
+        (*Printf.printf "cpd after marginalize:\n%s\n" (string_of_cpd cpd);*)
         let cpd = normalize_and_real cpd in
+        (*Printf.printf "cpd after normalize:\n%s\n" (string_of_cpd cpd);*)
         let cpd = add_evidence cpd q_vars q_values in
+        (*Printf.printf "cpd after evidence:\n%s\n" (string_of_cpd cpd);*)
         let answer = List.fold_left (fun p_tot (_,p,_) -> p_tot +. p) 0. cpd.data in
+        (*Printf.printf "answer:%f\n\n" answer;*)
         raise @: Answer(answer)
+      end
     ) None tree
   with Answer a -> Some a
 

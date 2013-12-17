@@ -81,8 +81,10 @@ let prob_of_lbls obs lbls ffs num_states num_ts =
     | [x] -> 0.
     | l_prev::l_cur::ls ->
       let p = get_p2 num_ts num_states t l_prev l_cur a in
+      (* debug *)
+      (*Printf.eprintf "%f\n%!" p;*)
       (log p) +. prod_rest (t+1) (l_cur::ls)
-  in exp @: p1 +. (prod_rest 2 @: lbls) 
+  in p1 +. (prod_rest 2 @: lbls) 
 
 let next_labels prev_labels lbl_ic = 
         (tl prev_labels) @ [(ios @: input_line lbl_ic)]

@@ -165,7 +165,7 @@ let cpds_of_data ffs num_states num_timesteps obs =
         list_populate (fun y_curr ->
           let y_curr_id = id_of_str @: soi y_curr in
           let p = get_potential ffs y_last y_curr obs t in
-          ([|y_last_id;y_curr_id|],p,[||])
+          [|y_last_id; y_curr_id|], p, [||]
         ) 1 num_states
       ) 1 num_states
     in

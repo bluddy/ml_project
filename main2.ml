@@ -145,7 +145,7 @@ let gradient_sweep p ffs =
  
 let gradient_ascent p ffs =
   let rec loop ffs = function
-    | 0 -> ()
+    | 0 -> ffs
     | i ->
       let newffs = gradient_sweep p ffs in
       let ll = calculate_likelihood p.input_file p.label_file newffs p.window
@@ -215,14 +215,15 @@ let main () =
     let label_file = params.label_file in
     if label_file = "" then print_endline usage_msg else
     (* build feature functions *)
-    let ffs =  build_1state_xffs num_states num_atoms 
+    let ffs = (* build_1state_xffs num_states num_atoms 
              @ build_1state_xffs2 num_states num_atoms 
-             @ build_transition_ffs num_states
+             @ *) build_transition_ffs num_states
     in
     let ll = calculate_likelihood 
       obs_file label_file ffs window num_states num_atoms (p.queries, p.clique_tree)
     in print_endline @: sof ll;
-    gradient_ascent params ffs
+    let newffs = gradient_ascent params ffs in
+    print_ffs newffs
 
   | GenLabels ->
     let ffs = build_1state_xffs num_states num_atoms 

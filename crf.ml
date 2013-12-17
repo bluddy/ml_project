@@ -106,7 +106,8 @@ let build_1state_xffs num_states num_atoms =
      list_populate (fun on_state ->
        list_populate (fun atom_num ->
          {
-          comment = "X coordinate";
+          comment = Printf.sprintf
+            "On state %i decreasing atom[%i].x" on_state atom_num;
           atom_idx = Some atom_num;
           prev_state=None;
           curr_state=Some on_state;
@@ -124,7 +125,8 @@ let build_1state_xffs2 num_states num_atoms =
      list_populate (fun on_state ->
        list_populate (fun atom_num ->
          {
-          comment = "X coordinate";
+          comment = Printf.sprintf
+            "On state %i increasing atom[%i].x" on_state atom_num;
           atom_idx = Some atom_num;
           prev_state=None;
           curr_state=Some on_state;
@@ -142,7 +144,8 @@ let build_transition_ffs num_states =
   list_populate (fun prev_on_state ->
     list_populate (fun on_state ->
       {
-        comment = "Transition function";
+        comment = Printf.sprintf
+            "State transition %i-%i" prev_on_state on_state;
         atom_idx = None;
         prev_state=Some prev_on_state;
         curr_state=Some on_state;

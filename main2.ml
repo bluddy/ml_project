@@ -135,7 +135,7 @@ let gradient_sweep p ffs =
     let weight = ff.weight +. (grad *. p.alpha *. inv_num_slides) in
     (* debug *)
     (*Printf.eprintf "%f, " weight;*)
-    (*{ff with weight}*)
+    {ff with weight}
   ) grads ffs
   in
   (* debug *)

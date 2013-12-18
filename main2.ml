@@ -22,7 +22,7 @@ type params = {
   mutable epsilon : float;
 }
 
-let next_window num_atoms last_obs in_chan : observation array = 
+let next_window num_atoms last_obs in_chan : obs_atom array = 
   let next = read_one_obs num_atoms in_chan in
   for i=0 to Array.length last_obs - 2 do
     last_obs.(i) <- last_obs.(i+1)
@@ -102,18 +102,19 @@ let gradient2 obs lbls window num_states f fps fcs ps =
 
 (* return list of gradients for the ffs *)
 let gradient_step infdata obs lbls ffs window num_states =
-  let ps = infer infdata ffs num_states window obs in
+  let probs = infer infdata ffs num_states window obs in
   (* debug *)
   (*Array.iter (fun p -> Printf.eprintf "%f, " p) ps;*)
   (*Printf.eprintf "\n";*)
   let grads = List.map (function
-    {weight=w;fn=f;prev_state=pso;curr_state=cso} ->
-      match cso, pso with
-      | None, _        -> failwith "error for now"
-      | Some fcs, None -> 
-        gradient1 obs lbls window num_states f fcs ps
-      | Some fcs, Some fps ->
-        gradient2 obs lbls window num_states f fps fcs ps
+    {fn;prev_state;curr_state;_} ->
+      match curr_state, prev_state, fn with
+      | None, _, _        -> failwith "error for now"
+      | Some fcs, None, Atom fn -> 
+        gradient1 obs lbls window num_states fn fcs probs
+      | Some fcs, Some fps, Atom fn ->
+        gradient2 obs lbls window num_states fn fps fcs probs
+      | _ -> failwith "unhandled function"
   ) ffs
   in
   (* debug *)

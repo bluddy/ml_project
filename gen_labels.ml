@@ -1,6 +1,7 @@
 open Util
 open Crf
 open Inference
+open Functions
 
 let rec which_state r cdf state : state = 
   if r <= (hd cdf)

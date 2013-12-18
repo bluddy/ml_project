@@ -1,5 +1,6 @@
 open Crf
 open Util
+open Functions
 open Cpd
 open Inference
 open Gen_labels
@@ -20,6 +21,7 @@ type params = {
   mutable clique_tree : CliqueTree.tree;
   mutable sigma_squared : float option;
   mutable epsilon : float;
+  mutable data_type : [`Atoms | `Features];
 }
 
 let next_window num_atoms last_obs in_chan : obs_atom array = 
@@ -193,11 +195,12 @@ let params = {
   clique_tree= CliqueTree.empty_tree ();
   sigma_squared=Some 1.;
   epsilon=10e-16;
+  data_type=`Features;
 }
 
 let main () =
   let param_specs = Arg.align [
-    "--labels", Arg.String (fun l -> params.label_file <- l),
+    "--labels", Arg.String (fun l -> params.label_file <- l; params.data_type <- `Atoms),
         "label_file     Set the label file";
     "--window", Arg.Int (fun i -> params.window <- i),
         "timestep window     Set the number of timesteps in a window";
@@ -243,13 +246,8 @@ let main () =
   match params.action with
   | GradientAscent ->
     let label_file = params.label_file in
-    if label_file = "" then print_endline usage_msg else
     (* build feature functions *)
-    let ffs =  build_1state_xffs num_states num_atoms 
-             @ build_1state_xffs2 num_states num_atoms 
-             @ build_transition_ffs num_states
-             (*@ build_1state_cont num_states num_atoms*)
-    in
+    let ffs =  build_all_fns num_states num_atoms p.data_type in
     let ll = calculate_likelihood obs_file label_file ffs window
       num_states num_atoms (p.queries, p.clique_tree) p.sigma_squared
     in print_endline @: sof ll;
@@ -257,10 +255,7 @@ let main () =
     print_ffs @: sort_ffs newffs
 
   | GenLabels ->
-    let ffs = build_1state_xffs num_states num_atoms 
-            @ build_1state_xffs2 num_states num_atoms 
-            @ build_transition_ffs num_states
-    in
+    let ffs = Functions.build_all_fns num_states num_atoms p.data_type in
     gen_labels obs_file ffs window num_states num_atoms (p.queries, p.clique_tree)
 
   | TestInference ->

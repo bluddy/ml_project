@@ -33,7 +33,7 @@ let next_window num_atoms last_obs in_chan : obs_atom array =
   last_obs
 
 (* calculate joint p(ys|x) by multiplying factors over all data *)
-let calculate_likelihood
+let calculate_likelihood_atoms
   obs_file label_file ffs window num_states num_atoms infdata sigma_sq = 
   let obs_ic = open_in obs_file in
   let lbl_ic = open_in label_file in
@@ -53,6 +53,32 @@ let calculate_likelihood
       acc
   in 
   let unreg = loop p1 init_obs init_lbls in
+  match sigma_sq with
+  | None    -> unreg
+  | Some s2 ->
+    let sig_factor = 1. /. (2. *. s2) in
+    (* regularize the log likelihood *)
+    let regularizer = 
+      List.fold_left (fun agg ff ->
+        agg +. ff.weight *. ff.weight *. sig_factor
+      ) 0. ffs
+    in unreg -. regularizer
+
+(* calculate joint p(ys|x) by multiplying factors over all data *)
+let calculate_likelihood_features
+  data labels ffs window num_states infdata sigma_sq = 
+  let unreg, _, _ =
+    List.fold_left2 (fun (sum_p, win_obs, win_y) obs y ->
+      let win_obs' = list_drop 1 @: win_obs@obs in
+      let win_y' = list_drop 1 @: win_y@y in
+      let p = prob_of_lbls win_obs' win_y' ffs num_states window infdata in
+      sum_p +. p, win_obs', win_y'
+    ) 
+    (* add dummy values since those will be removed *)
+    (0., hd obs::(list_take (window-1) obs), hd labels::(list_take (window-1) labels))
+    list_drop (window-1) data
+    list_drop (window-1) labels
+  in
   match sigma_sq with
   | None    -> unreg
   | Some s2 ->
@@ -124,7 +150,7 @@ let gradient_step infdata obs lbls ffs window num_states =
   (*Printf.eprintf "\n";*)
   grads
 
-let gradient_sweep p ffs =
+let gradient_sweep_atoms p ffs =
   let obs_ic = open_in p.input_file in
   let lbl_ic = open_in p.label_file in
   let init_obs = read_n_obs obs_ic p.window p.num_atoms in 
@@ -162,19 +188,68 @@ let gradient_sweep p ffs =
   (* debug *)
   (*Printf.eprintf "\n";*)
   ffs'
+
+let gradient_sweep_features p ffs data labels =
+  let num_slides = foi @: p.ts - p.window + 1 in
+  let inv_num_slides = 1. /. num_slides in
+  let grads_init = list_populate (fun _ -> 0.) 0 (List.length ffs)
+  let grads, _, _ =
+    List.fold_left2 (fun (acc_grads, win_obs, win_y) obs y ->
+      let win_obs' = list_drop 1 @: win_obs@obs in
+      let win_y' = list_drop 1 @: win_y@y in
+      let grads = gradient_step (p.queries, p.clique_tree) win_obs'
+        win_y' ffs p.window p.num_states in
+      let acc_grads' = List.map2 (+.) grads acc_grads in
+      acc_grads', win_obs', win_y'
+    ) 
+    (* add dummy values since those will be removed *)
+    (grads_init, hd obs::(list_take (window-1) obs), hd labels::(list_take (window-1) labels))
+    list_drop (window-1) data
+    list_drop (window-1) labels
+  in
+  let inv_sigma_sq = match p.sigma_squared with
+    | None    -> 0.
+    | Some s2 -> 1. /. s2
+  in
+  let ffs' = List.map2 (fun grad ff ->
+    let weight = ff.weight +. (grad *. p.alpha *. inv_num_slides) -.
+      ff.weight *. inv_sigma_sq in
+    (* debug *)
+    (*Printf.eprintf "%f, " weight;*)
+    {ff with weight}
+  ) grads ffs
+  in
+  (* debug *)
+  (*Printf.eprintf "\n";*)
+  ffs'
  
-let gradient_ascent p ffs ll =
+let gradient_ascent p ffs =
+  let _, labels, data = match p.data_type with
+    | `Atoms -> 0, [], []
+    | `Features -> read_data_file p.input_file 1
+  in
+  let compute_ll ffs = match p.data_type with
+    | `Atoms    -> calculate_likelihood_atoms p.input_file
+                     p.label_file newffs p.window p.num_states p.num_atoms
+                     (p.queries, p.clique_tree) p.sigma_squared
+    | `Features -> calculate_likelihood_features data labels newffs p.window
+                     p.num_states (p.queries, p.clique_tree)
+                     p.sigma_squared
+  in
+  let init_ll = compute_ll ffs in
+  print_endline @: sof init_ll;
   let rec loop ffs last_ll = function
     | 0 -> ffs
     | i ->
-      let newffs = gradient_sweep p ffs in
-      let ll = calculate_likelihood p.input_file p.label_file newffs p.window
-        p.num_states p.num_atoms (p.queries, p.clique_tree) p.sigma_squared
+      let newffs = match p.data_type with
+        | `Atoms    -> gradient_sweep_atoms p ffs
+        | `Features -> gradient_sweep_features p ffs labels data
       in
+      let ll = compute_ll ffs in
       if abs_float(ll -. last_ll) <= p.epsilon then ffs else begin
       print_endline @: sof ll;
       loop newffs ll (i-1) end
-  in loop ffs ll p.num_iter 
+  in loop ffs init_ll p.num_iter 
 
 let sort_ffs ffs =
   List.sort (fun {weight=w1;_} {weight=w2;_} -> 
@@ -248,9 +323,6 @@ let main () =
     let label_file = params.label_file in
     (* build feature functions *)
     let ffs =  build_all_fns num_states num_atoms p.data_type in
-    let ll = calculate_likelihood obs_file label_file ffs window
-      num_states num_atoms (p.queries, p.clique_tree) p.sigma_squared
-    in print_endline @: sof ll;
     let newffs = gradient_ascent params ffs ll in
     print_ffs @: sort_ffs newffs
 

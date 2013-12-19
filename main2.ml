@@ -23,6 +23,7 @@ type params = {
   mutable epsilon : float;
   mutable data_type : [`Atoms | `Features];
   mutable limit_data : int option;
+  mutable use_hbonds : bool;
 }
 
 let next_window num_atoms last_obs in_chan : obs array = 
@@ -264,8 +265,9 @@ let gradient_ascent_features p =
        Array.length chi1, Array.length chi2, Array.length h_bonds
    | _ -> failwith "not an obs_feature"
   in
-  let ffs =
-    build_all_fns_feature p.num_states (num_chi1,num_chi2,num_hbonds) in
+  let ffs = build_all_fns_feature 
+    p.num_states (num_chi1,num_chi2,num_hbonds) ~use_hbonds:p.use_hbonds 
+  in
   let compute_ll ffs = 
     calculate_likelihood_features data labels ffs p.window
       p.num_states (p.queries, p.clique_tree)
@@ -304,6 +306,7 @@ let params = {
   epsilon=10e-16;
   data_type=`Features;
   limit_data=None;
+  use_hbonds=true;
 }
 
 let main () =
@@ -332,6 +335,8 @@ let main () =
         "sigma square     Don't use sigma squared";
     "--limit", Arg.Int (fun i -> params.limit_data <- Some i),
         "limit data     Limit the amount of data used";
+    "--no-hbonds", Arg.Unit (fun _ -> params.use_hbonds <- false),
+        "hbonds    Don't use hbonds";
   ] in
   let usage_msg =
     Printf.sprintf "%s obs_file [options]" Sys.argv.(0) in

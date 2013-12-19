@@ -199,11 +199,11 @@ let build_all_fns_atom num_states num_atoms =
     @ build_transition_ffs num_states `Atoms
     (*@ build_1state_cont num_states num_atoms*)
 
-let build_all_fns_feature num_states (num_chi1,num_chi2,num_hbonds) =
+let build_all_fns_feature num_states (num_chi1,num_chi2,num_hbonds) ~use_hbonds =
   build_transition_ffs num_states `Features @
   build_bin_fn num_states num_chi1 [330.; 30.; 90.; 270.; 330.] true @
   build_bin_fn num_states num_chi2 [330.; 30.; 90.; 270.; 330.] false @
-  build_hbond_fn num_states num_hbonds 
+  if use_hbonds then build_hbond_fn num_states num_hbonds else []
       
 
 

@@ -262,10 +262,12 @@ let gradient_ascent_features p =
   let labels, data =
     match p.limit_data with
     | Some x -> 
-        p.ts <- x;
         list_take x labels, list_take x data
     | None -> labels, data
   in
+  p.ts <- List.length labels;
+  Printf.printf "ts=%i" p.ts;
+  print_newline ();
   let num_chi1, num_chi2, num_hbonds = match hd data with
    | Obs_feature({chi1;chi2;h_bonds;_}) ->
        Array.length chi1, Array.length chi2, Array.length h_bonds

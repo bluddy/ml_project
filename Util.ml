@@ -327,6 +327,17 @@ let array_find pred arr =
 let array_map f arr =
   List.rev @: Array.fold_left (fun acc x -> (f x)::acc) [] arr
 
+(* shift array values by x *)
+let array_shift x arr =
+  for i=0 to Array.length arr do
+    if i + x >= 0 && i + x < Array.length arr then
+      arr.(i) <- arr.(i + x)
+    else ()
+  done
+
+let array_shiftl x arr = array_shift x arr
+let array_shiftr x arr = array_shift (-x) arr
+
 (* wrap with some *)
 let some x = Some(x)
 

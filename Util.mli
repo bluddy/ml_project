@@ -143,6 +143,9 @@ val find_idx : 'a -> 'a list -> int option
 
 val array_find : ('a -> bool) -> 'a array -> int * 'a
 
+val array_shiftl : int -> 'a array -> unit
+val array_shiftr : int -> 'a array -> unit
+
 (* map an array to a list *)
 val array_map : ('a -> 'b) -> 'a array -> 'b list
 

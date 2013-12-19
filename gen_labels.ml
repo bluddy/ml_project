@@ -35,7 +35,6 @@ let sample_next_state num_states num_ts curr_t last_state a =
   ) 1 num_states in
   sample_state pdf
 
- 
 let sample_initial_labels ffs num_states num_ts init_obs infdata = 
   let a = infer infdata ffs num_states num_ts init_obs in
   (* s1 *)
@@ -57,7 +56,7 @@ let sample_next_labels ffs num_states num_ts prev_labels new_obs infdata =
 let rec sample_until_eof 
   ic ffs num_atoms num_states prev_labels prev_obs num_ts infdata =
   try
-   let obs = next_window num_atoms prev_obs ic in
+   let (obs:obs array) = next_window num_atoms prev_obs ic in
    let labels = sample_next_labels ffs num_states num_ts prev_labels obs infdata in
    let last_label = hd @: List.rev labels in
    print_endline (soi last_label);

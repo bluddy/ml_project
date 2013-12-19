@@ -24,7 +24,7 @@ type params = {
   mutable data_type : [`Atoms | `Features];
 }
 
-let next_window num_atoms last_obs in_chan : obs_atom array = 
+let next_window num_atoms last_obs in_chan : obs array = 
   let next = read_one_obs num_atoms in_chan in
   for i=0 to Array.length last_obs - 2 do
     last_obs.(i) <- last_obs.(i+1)
@@ -69,15 +69,19 @@ let calculate_likelihood_features
   data labels ffs window num_states infdata sigma_sq = 
   let unreg, _, _ =
     List.fold_left2 (fun (sum_p, win_obs, win_y) obs y ->
-      let win_obs' = list_drop 1 @: win_obs@obs in
-      let win_y' = list_drop 1 @: win_y@y in
-      let p = prob_of_lbls win_obs' win_y' ffs num_states window infdata in
-      sum_p +. p, win_obs', win_y'
+      array_shiftl 1 win_obs;
+      win_obs.(window - 1) <- obs;
+      let win_y' = list_drop 1 @: win_y@[y] in
+      let p = prob_of_lbls win_obs win_y' ffs num_states window infdata in
+      sum_p +. p, win_obs, win_y'
     ) 
     (* add dummy values since those will be removed *)
-    (0., hd obs::(list_take (window-1) obs), hd labels::(list_take (window-1) labels))
-    list_drop (window-1) data
-    list_drop (window-1) labels
+    (0., 
+     Array.of_list @: hd data::list_take (window-1) data, 
+     hd labels::list_take (window-1) labels
+    )
+    (list_drop (window-1) data)
+    (list_drop (window-1) labels)
   in
   match sigma_sq with
   | None    -> unreg
@@ -138,9 +142,9 @@ let gradient_step infdata obs lbls ffs window num_states =
     {fn;prev_state;curr_state;_} ->
       match curr_state, prev_state, fn with
       | None, _, _        -> failwith "error for now"
-      | Some fcs, None, Atom fn -> 
+      | Some fcs, None, Atom_fn fn -> 
         gradient1 obs lbls window num_states fn fcs probs
-      | Some fcs, Some fps, Atom fn ->
+      | Some fcs, Some fps, Atom_fn fn ->
         gradient2 obs lbls window num_states fn fps fcs probs
       | _ -> failwith "unhandled function"
   ) ffs
@@ -192,20 +196,24 @@ let gradient_sweep_atoms p ffs =
 let gradient_sweep_features p ffs data labels =
   let num_slides = foi @: p.ts - p.window + 1 in
   let inv_num_slides = 1. /. num_slides in
-  let grads_init = list_populate (fun _ -> 0.) 0 (List.length ffs)
+  let grads_init = list_populate (fun _ -> 0.) 0 (List.length ffs) in
   let grads, _, _ =
     List.fold_left2 (fun (acc_grads, win_obs, win_y) obs y ->
-      let win_obs' = list_drop 1 @: win_obs@obs in
-      let win_y' = list_drop 1 @: win_y@y in
-      let grads = gradient_step (p.queries, p.clique_tree) win_obs'
+      array_shiftl 1 win_obs;
+      win_obs.(p.window - 1) <- obs;
+      let win_y' = list_drop 1 @: win_y@[y] in
+      let grads = gradient_step (p.queries, p.clique_tree) win_obs
         win_y' ffs p.window p.num_states in
       let acc_grads' = List.map2 (+.) grads acc_grads in
-      acc_grads', win_obs', win_y'
+      acc_grads', win_obs, win_y'
     ) 
     (* add dummy values since those will be removed *)
-    (grads_init, hd obs::(list_take (window-1) obs), hd labels::(list_take (window-1) labels))
-    list_drop (window-1) data
-    list_drop (window-1) labels
+    (grads_init, 
+     Array.of_list @: hd data::list_take (p.window-1) data, 
+     hd labels::list_take (p.window-1) labels
+    )
+    (list_drop (p.window-1) data)
+    (list_drop (p.window-1) labels)
   in
   let inv_sigma_sq = match p.sigma_squared with
     | None    -> 0.
@@ -230,9 +238,9 @@ let gradient_ascent p ffs =
   in
   let compute_ll ffs = match p.data_type with
     | `Atoms    -> calculate_likelihood_atoms p.input_file
-                     p.label_file newffs p.window p.num_states p.num_atoms
+                     p.label_file ffs p.window p.num_states p.num_atoms
                      (p.queries, p.clique_tree) p.sigma_squared
-    | `Features -> calculate_likelihood_features data labels newffs p.window
+    | `Features -> calculate_likelihood_features data labels ffs p.window
                      p.num_states (p.queries, p.clique_tree)
                      p.sigma_squared
   in
@@ -243,10 +251,10 @@ let gradient_ascent p ffs =
     | i ->
       let newffs = match p.data_type with
         | `Atoms    -> gradient_sweep_atoms p ffs
-        | `Features -> gradient_sweep_features p ffs labels data
+        | `Features -> gradient_sweep_features p ffs data labels
       in
-      let ll = compute_ll ffs in
-      if abs_float(ll -. last_ll) <= p.epsilon then ffs else begin
+      let ll = compute_ll newffs in
+      if abs_float(ll -. last_ll) <= p.epsilon then newffs else begin
       print_endline @: sof ll;
       loop newffs ll (i-1) end
   in loop ffs init_ll p.num_iter 
@@ -317,13 +325,15 @@ let main () =
   let clique_t_s = CliqueTree.clique_tree_string_of_crf p.window in
   p.clique_tree <- CliqueTree.parse_clique_tree clique_t_s;
   CliqueTree.set_tree_sepsets p.clique_tree;
+  let s = match params.data_type with 
+  | `Features -> "Features mode" | `Atoms -> "Atoms mode" in
+  print_endline s;
 
   match params.action with
   | GradientAscent ->
-    let label_file = params.label_file in
     (* build feature functions *)
     let ffs =  build_all_fns num_states num_atoms p.data_type in
-    let newffs = gradient_ascent params ffs ll in
+    let newffs = gradient_ascent params ffs in
     print_ffs @: sort_ffs newffs
 
   | GenLabels ->

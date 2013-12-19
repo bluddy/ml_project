@@ -11,7 +11,7 @@ let get_p2 num_ts num_states curr_t prev_s curr_s ps =
   let num_in_front = num_ts*num_states in
   ps.(num_in_front + i)
 
-let read_one_obs num_atoms ic : Functions.obs_atom = 
+let read_one_obs num_atoms ic = 
   let lines = read_n_lines num_atoms ic in
   let r_comma = Str.regexp "," in
   let read_line line = 
@@ -39,13 +39,14 @@ let read_one_obs num_atoms ic : Functions.obs_atom =
       let data = 
         List.map (fun tup ->
           match tup with
-          | (ts, atoms) -> {timestep=ts; atoms=Array.of_list (List.rev atoms)}
+          | (ts, atoms) ->
+              Obs_atom {timestep=ts; atoms=Array.of_list (List.rev atoms)}
       ) ts_atom_tup_list
       in (hd data)
  | _ -> failwith "failed observation read"
 
 (* read data into an observation array *)
-let read_n_obs ic n num_atoms : obs_atom array =
+let read_n_obs ic n num_atoms =
   let l = list_populate (fun n ->
       read_one_obs num_atoms ic 
   ) 0 n in
@@ -68,13 +69,15 @@ let print_ffs ffs =
      Printf.printf "%s: %f\n" comment weight
   ) ffs
 
-let get_potential ffs prev_state curr_state obs t = 
+let get_potential ffs prev_state curr_state obs t =
    List.fold_left (fun acc {weight;fn;_}  ->
-      let fn = match fn with
-      | Atom f -> f | _ -> failwith "only atom functions for now"
-      in
-      acc +. (weight *. (fn prev_state curr_state obs t))
+      match fn with
+      | Atom_fn f ->
+          acc +. (weight *. (f prev_state curr_state obs t))
+      | Feature_fn f ->
+          acc +. (weight *. (f prev_state curr_state obs t))
     ) 0. ffs 
+
   (*Parmap.parfold
     ~ncores:2
     (fun {weight;fn;_} acc ->
@@ -104,7 +107,7 @@ let cpds_of_data ffs num_states num_timesteps obs =
     {vars=[|t_last_id;t_id|]; backptrs=[||];data}
   ) 2 (num_timesteps-1)
 
-let next_window num_atoms last_obs in_chan : obs_atom array = 
+let next_window num_atoms last_obs in_chan : (obs array) = 
   let next = read_one_obs num_atoms in_chan in
   for i=0 to Array.length last_obs - 2 do
     last_obs.(i) <- last_obs.(i+1)
@@ -145,12 +148,14 @@ let read_data str begin_ts =
   let next_idx, ys, obs =
     List.fold_left (fun (acc_idx, acc_y, acc_obs) d ->
       let ($) = List.nth in
-      let chi2, chi1, h_bonds, rmsd = Array.of_list (d$0), Array.of_list (d$1), d$2, d$3 in
+      let chi2, chi1, h_bonds, rmsd =
+        Array.of_list (d$0), Array.of_list (d$1), d$2, d$3 in
       (* h_bonds should be ints *)
       let h_bonds = Array.of_list @: List.map (fun f -> iof f) h_bonds in
       let rmsd_y = list_zip y_range rmsd in
       let _, y = list_min_op (fst) rmsd_y in
-      acc_idx+1, y::acc_y, {timestep=acc_idx;chi1;chi2;h_bonds}::acc_obs
+      acc_idx+1, y::acc_y, 
+      Obs_feature {timestep=acc_idx;chi1;chi2;h_bonds}::acc_obs
     ) (begin_ts, [], []) ts
   in
   next_idx, List.rev ys, List.rev obs

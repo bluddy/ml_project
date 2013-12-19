@@ -7,6 +7,7 @@ type atom = {
   orig_idx : int;
 }
 
+
 type obs_atom = {
   atoms : atom array;
   timestep : int;
@@ -19,15 +20,19 @@ type obs_feature = {
   h_bonds : int array;
 }
 
-type obs_features = obs_feature list
+type obs = Obs_atom of obs_atom | Obs_feature of obs_feature
 
+let obs_atom = function Obs_atom x -> x | _ -> failwith "not obs_atom"
+let obs_feature = function Obs_feature x -> x | _ -> failwith "not obs_feature"
+
+type observations = obs list
 
 type state = int
 
 type fn = 
-               (*last,  curr     ,                  , t    , value*)
-  | Atom of    (state -> state -> obs_atom array -> int -> float)
-  | Feature of (state -> state -> obs_feature array -> int -> float)
+                  (*last,  curr     ,                  , t    , value*)
+  | Atom_fn    of (state -> state -> obs array -> int -> float)
+  | Feature_fn of (state -> state -> obs array -> int -> float)
 
 type feature_fn = {
   comment: string;
@@ -52,9 +57,10 @@ let build_1state_xffs num_states num_atoms =
           prev_state=None;
           curr_state=Some on_state;
           weight=random_weight ();
-          fn = Atom(fun last curr obs t ->
+          fn = Atom_fn(fun last curr obs t ->
                 if curr = on_state &&
-                   obs.(t-1).atoms.(atom_num).x < obs.(t-2).atoms.(atom_num).x then 1.
+                   (obs_atom obs.(t-1)).atoms.(atom_num).x < 
+                   (obs_atom obs.(t-2)).atoms.(atom_num).x then 1.
                 else 0.)
          }
        ) 0 num_atoms
@@ -71,9 +77,10 @@ let build_1state_xffs2 num_states num_atoms =
           prev_state=None;
           curr_state=Some on_state;
           weight=random_weight ();
-          fn = Atom(fun last curr obs t ->
+          fn = Atom_fn(fun last curr obs t ->
                 if curr = on_state &&
-                   obs.(t-1).atoms.(atom_num).x >= obs.(t-2).atoms.(atom_num).x then 1.
+                   (obs_atom obs.(t-1)).atoms.(atom_num).x >= 
+                   (obs_atom obs.(t-2)).atoms.(atom_num).x then 1.
                 else 0.)
          }
        ) 0 num_atoms
@@ -90,7 +97,7 @@ let build_transition_ffs num_states =
         prev_state=Some prev_on_state;
         curr_state=Some on_state;
         weight=random_weight ();
-        fn = Atom(fun last curr obs t ->
+        fn = Atom_fn(fun last curr obs t ->
                if last = prev_on_state && curr = on_state 
                then 1.
                else 0.)
@@ -109,10 +116,10 @@ let build_1state_cont num_states num_atoms =
           prev_state=None;
           curr_state=Some on_state;
           weight=random_weight ();
-          fn = Atom(fun last curr obs t ->
+          fn = Atom_fn(fun last curr obs t ->
                 if curr = on_state then
-                  let cur_val = obs.(t-2).atoms.(atom_num).x in
-                  (obs.(t-1).atoms.(atom_num).x -. cur_val) /. cur_val
+                  let cur_val = (obs_atom obs.(t-2)).atoms.(atom_num).x in
+                  ((obs_atom obs.(t-1)).atoms.(atom_num).x -. cur_val) /. cur_val
                 else 0.)
          }
        ) 0 num_atoms

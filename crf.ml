@@ -111,6 +111,10 @@ let next_window num_atoms last_obs in_chan : (obs array) =
   last_obs.(Array.length last_obs - 1) <- next;
   last_obs
 
+(* convert [-180;180] to [0;360] *)
+let convert_degrees neg_deg =
+  if neg_deg < 0. then 360. +. neg_deg else neg_deg
+
 (* read all data from a file/string *)
 let read_data str begin_ts =
   let r_ts = Str.regexp "{" in
@@ -151,8 +155,11 @@ let read_data str begin_ts =
   let next_idx, ys, obs =
     List.fold_left (fun (acc_idx, acc_y, acc_obs) d ->
       let ($) = List.nth in
+      let conv_all_degs = List.map convert_degrees in
       let chi2, chi1, h_bonds, rmsd =
-        Array.of_list (d$0), Array.of_list (d$1), d$2, d$3 in
+        Array.of_list @: conv_all_degs (d$0), 
+        Array.of_list @: conv_all_degs (d$1), 
+        d$2, d$3 in
       (* h_bonds should be ints *)
       let h_bonds = Array.of_list @: List.map (fun f -> iof f) h_bonds in
       let rmsd_y = list_zip y_range rmsd in

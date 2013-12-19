@@ -230,28 +230,45 @@ let gradient_sweep_features p ffs data labels =
   (*Printf.eprintf "\n";*)
   ffs'
  
-let gradient_ascent p ffs =
-  let _, labels, data = match p.data_type with
-    | `Atoms -> 0, [], []
-    | `Features -> read_data_file p.input_file 1
-  in
-  let compute_ll ffs = match p.data_type with
-    | `Atoms    -> calculate_likelihood_atoms p.input_file
-                     p.label_file ffs p.window p.num_states p.num_atoms
-                     (p.queries, p.clique_tree) p.sigma_squared
-    | `Features -> calculate_likelihood_features data labels ffs p.window
-                     p.num_states (p.queries, p.clique_tree)
-                     p.sigma_squared
+let gradient_ascent_atoms p =
+  let ffs = build_all_fns_atom p.num_states p.num_atoms in
+  let compute_ll ffs = 
+    calculate_likelihood_atoms p.input_file
+      p.label_file ffs p.window p.num_states p.num_atoms
+      (p.queries, p.clique_tree) p.sigma_squared
   in
   let init_ll = compute_ll ffs in
   print_endline @: sof init_ll;
   let rec loop ffs last_ll = function
     | 0 -> ffs
     | i ->
-      let newffs = match p.data_type with
-        | `Atoms    -> gradient_sweep_atoms p ffs
-        | `Features -> gradient_sweep_features p ffs data labels
-      in
+      let newffs = gradient_sweep_atoms p ffs in
+      let ll = compute_ll newffs in
+      if abs_float(ll -. last_ll) <= p.epsilon then newffs else begin
+      print_endline @: sof ll;
+      loop newffs ll (i-1) end
+  in loop ffs init_ll p.num_iter 
+
+let gradient_ascent_features p =
+  let _, labels, data = read_data_file p.input_file 1 in
+  let num_chi1, num_chi2, num_hbonds = match hd data with
+   | Obs_feature({chi1;chi2;h_bonds;_}) ->
+       Array.length chi1, Array.length chi2, Array.length h_bonds
+   | _ -> failwith "not an obs_feature"
+  in
+  let ffs =
+    build_all_fns_feature p.num_states (num_chi1,num_chi2,num_hbonds) in
+  let compute_ll ffs = 
+    calculate_likelihood_features data labels ffs p.window
+      p.num_states (p.queries, p.clique_tree)
+      p.sigma_squared
+  in
+  let init_ll = compute_ll ffs in
+  print_endline @: sof init_ll;
+  let rec loop ffs last_ll = function
+    | 0 -> ffs
+    | i ->
+      let newffs = gradient_sweep_features p ffs data labels in
       let ll = compute_ll newffs in
       if abs_float(ll -. last_ll) <= p.epsilon then newffs else begin
       print_endline @: sof ll;
@@ -331,12 +348,14 @@ let main () =
   match params.action with
   | GradientAscent ->
     (* build feature functions *)
-    let ffs =  build_all_fns num_states num_atoms p.data_type in
-    let newffs = gradient_ascent params ffs in
+    let newffs = match params.data_type with
+      | `Atoms -> gradient_ascent_atoms params
+      | `Features -> gradient_ascent_features params
+    in
     print_ffs @: sort_ffs newffs
 
   | GenLabels ->
-    let ffs = Functions.build_all_fns num_states num_atoms p.data_type in
+    let ffs = Functions.build_all_fns_atom num_states num_atoms in
     gen_labels obs_file ffs window num_states num_atoms (p.queries, p.clique_tree)
 
   | TestInference ->

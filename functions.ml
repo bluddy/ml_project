@@ -133,33 +133,77 @@ let build_1state_cont num_states num_atoms =
      ) 1 num_states 
 
 (* feature function *)
-(*let build_1state_cont num_states num_atoms =
+let build_bin_fn num_states num_angles bins is_chi1 =
+  let is_chi_s = match is_chi1 with true -> "chi1" | false -> "chi2" in
+     List.flatten @: List.flatten @:
+     list_populate (fun on_state ->
+       list_populate (fun angle_num ->
+         List.rev @: fst @:
+         List.fold_left (fun (acc,last_bin) bin ->
+          {
+            comment = Printf.sprintf
+              "On state %i %s[%i] bin[%f-%f]" 
+                on_state is_chi_s angle_num last_bin bin;
+            atom_idx=None;
+            prev_state=None;
+            curr_state=Some on_state;
+            weight=random_weight ();
+            fn = Feature_fn(fun last curr obs t ->
+              if curr = on_state then
+                let chi = if is_chi1 then 
+                  (obs_feature obs.(t-1)).chi1
+                else
+                  (obs_feature obs.(t-1)).chi2
+                in
+                let v = chi.(angle_num) in
+                if bin > last_bin then
+                  if v >= last_bin && v < bin then
+                    1. else 0.
+                else
+                  if (v >= last_bin && v <= 360.) ||
+                    (v >= 0. && v <= bin) then
+                      1. else 0.
+              else 0.
+            )
+          }::acc, bin
+         )
+         ([], hd bins)
+         (tl bins)
+       ) 0 num_angles
+     ) 1 num_states 
+
+let build_hbond_fn num_states num_hbond =
      List.flatten @:
      list_populate (fun on_state ->
-       list_populate (fun atom_num ->
-         {
-          comment = Printf.sprintf
-            "On state %i relative change atom[%i].x" on_state atom_num;
-          atom_idx = Some atom_num;
-          prev_state=None;
-          curr_state=Some on_state;
-          weight=random_weight ();
-          fn = Atom_fn(fun last curr obs t ->
-                if curr = on_state then
-                  let cur_val = (obs_atom obs.(t-2)).atoms.(atom_num).x in
-                  ((obs_atom obs.(t-1)).atoms.(atom_num).x -. cur_val) /. cur_val
-                else 0.)
-         }
-       ) 0 num_atoms
+       list_populate (fun hbond_num ->
+          {
+            comment = Printf.sprintf
+              "On state %i hbond[%i]" on_state hbond_num;
+            atom_idx=None;
+            prev_state=None;
+            curr_state=Some on_state;
+            weight=random_weight ();
+            fn = Feature_fn(fun last curr obs t ->
+              if curr = on_state then
+                if (obs_feature obs.(t-1)).h_bonds.(hbond_num) = 0 then 0.
+                else 1.
+              else 0.
+            )
+          }
+       ) 0 num_hbond
      ) 1 num_states 
-     *)
 
-let build_all_fns num_states num_atoms = function
-  | `Atoms ->
+let build_all_fns_atom num_states num_atoms =
       build_1state_xffs num_states num_atoms 
     @ build_1state_xffs2 num_states num_atoms 
     @ build_transition_ffs num_states `Atoms
     (*@ build_1state_cont num_states num_atoms*)
-  | `Features ->
-      build_transition_ffs num_states `Features
+
+let build_all_fns_feature num_states (num_chi1,num_chi2,num_hbonds) =
+  build_transition_ffs num_states `Features @
+  build_bin_fn num_states num_chi1 [330.; 30.; 90.; 270.; 330.] true @
+  build_bin_fn num_states num_chi2 [330.; 30.; 90.; 270.; 330.] false @
+  build_hbond_fn num_states num_hbonds 
+      
+
 

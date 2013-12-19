@@ -71,11 +71,7 @@ let print_ffs ffs =
 
 let get_potential ffs prev_state curr_state obs t =
    List.fold_left (fun acc {weight;fn;_}  ->
-      match fn with
-      | Atom_fn f ->
-          acc +. (weight *. (f prev_state curr_state obs t))
-      | Feature_fn f ->
-          acc +. (weight *. (f prev_state curr_state obs t))
+      acc +. (weight *. (apply_ff fn prev_state curr_state obs t))
     ) 0. ffs 
 
   (*Parmap.parfold
@@ -120,6 +116,7 @@ let read_data str begin_ts =
   let r_ts = Str.regexp "{" in
   let r_data = Str.regexp "\\[" in
   let r_comma = Str.regexp ", " in
+  let r_num = Str.regexp "-?[0-9]+\\(\\.[0-9]*\\)?" in
   let ts = Str.split r_ts str in
   let ts = list_drop 1 ts in (* just a beginning [ *)
   let ts = List.map (fun t -> 
@@ -129,13 +126,19 @@ let read_data str begin_ts =
     let data = list_drop 1 data in
     List.map (fun d ->
       let vals = Str.split r_comma d in
-      let vals = list_drop_end 1 vals in (* label for next data *)
       let vals' = List.rev vals in
-      let vals' = match vals' with
-        | []    -> failwith "Empty list"
-        | x::xs -> str_drop_end 1 x::xs (* drop the ] from the number *)
-      in
-      List.rev vals'
+      (* don't drop if it's rmsd (last one) *)
+      if Str.string_match r_num (hd vals') 0
+      then
+        let vals' = Str.matched_string (hd vals')::(list_drop 1 vals') in
+        List.rev vals'
+      else 
+        let vals' = list_drop 1 vals' in
+        if Str.string_match r_num (hd vals') 0 then
+          let vals' = Str.matched_string (hd vals')::(list_drop 1 vals') in
+          List.rev vals'
+        else
+          failwith "couldn't find number"
     ) data
   ) ts
   in
@@ -153,7 +156,8 @@ let read_data str begin_ts =
       (* h_bonds should be ints *)
       let h_bonds = Array.of_list @: List.map (fun f -> iof f) h_bonds in
       let rmsd_y = list_zip y_range rmsd in
-      let _, y = list_min_op (fst) rmsd_y in
+      let (y,_), _ = list_min_op (snd) rmsd_y in
+      (*print_endline @: soi y; [>debug<]*)
       acc_idx+1, y::acc_y, 
       Obs_feature {timestep=acc_idx;chi1;chi2;h_bonds}::acc_obs
     ) (begin_ts, [], []) ts

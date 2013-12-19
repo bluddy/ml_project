@@ -99,10 +99,10 @@ let gradient1 obs lbls window num_states f fcs ps =
   let c,e = List.fold_left (fun (curr,exp) t -> 
     let prevs = lblsa.(t-2) in
     let cs    = lblsa.(t-1) in
-    let fval = f prevs cs obs t in 
+    let fval = apply_ff f prevs cs obs t in 
     let newcurr = curr +. fval  in
     let p = get_p window num_states t fcs ps in
-    let otherf = f (-1) fcs obs t in 
+    let otherf = apply_ff f (-1) fcs obs t in 
     (* debug *)
     (*Printf.eprintf "gradient1: fval(%f), otherf(%f), p(%f)\n" fval otherf p;*)
     let newexp = exp +. p *. otherf in
@@ -118,10 +118,10 @@ let gradient2 obs lbls window num_states f fps fcs ps =
   let c,e = List.fold_left (fun (curr,exp) t ->
     let prevs = lblsa.(t-2) in
     let cs    = lblsa.(t-1) in
-    let fval = f prevs cs obs t in 
+    let fval = apply_ff f prevs cs obs t in 
     let newcurr = curr +. fval  in
     let p = get_p2 window num_states t fps fcs ps in
-    let otherf = f fps fcs obs t in
+    let otherf = apply_ff f fps fcs obs t in
     (* debug *)
     (*Printf.eprintf "gradient2: fval(%f), otherf(%f), p(%f)\n" fval otherf p;*)
     let newexp = exp +. p *. otherf in
@@ -140,13 +140,12 @@ let gradient_step infdata obs lbls ffs window num_states =
   (*Printf.eprintf "\n";*)
   let grads = List.map (function
     {fn;prev_state;curr_state;_} ->
-      match curr_state, prev_state, fn with
-      | None, _, _        -> failwith "error for now"
-      | Some fcs, None, Atom_fn fn -> 
+      match curr_state, prev_state with
+      | None, _            -> failwith "error for now"
+      | Some fcs, None     -> 
         gradient1 obs lbls window num_states fn fcs probs
-      | Some fcs, Some fps, Atom_fn fn ->
+      | Some fcs, Some fps ->
         gradient2 obs lbls window num_states fn fps fcs probs
-      | _ -> failwith "unhandled function"
   ) ffs
   in
   (* debug *)
@@ -341,7 +340,7 @@ let main () =
     gen_labels obs_file ffs window num_states num_atoms (p.queries, p.clique_tree)
 
   | TestInference ->
-    let ffs = build_transition_ffs num_states in
+    let ffs = build_transition_ffs num_states `Atoms in
     let lambdas=[-0.622;2.59; -2.35; 0.777] in
     let ffs = 
       List.map2 (fun ff weight -> {ff with weight}) ffs lambdas in

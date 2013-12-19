@@ -43,6 +43,10 @@ type feature_fn = {
   fn : fn;
 }
 
+let apply_ff ff last_s curr_s obs_arr t = match ff with
+  | Atom_fn f    -> f last_s curr_s obs_arr t
+  | Feature_fn f -> f last_s curr_s obs_arr t
+
 let random_weight () = (Random.float 1.) -. 0.5
 
 (* feature functions should only be called starting at t=2 *)
@@ -86,10 +90,14 @@ let build_1state_xffs2 num_states num_atoms =
        ) 0 num_atoms
      ) 1 num_states 
 
-let build_transition_ffs num_states =
+let build_transition_ffs num_states fn_type =
   List.flatten @: 
   list_populate (fun prev_on_state ->
     list_populate (fun on_state ->
+      let fn last curr _ t =
+        if last = prev_on_state && curr = on_state 
+        then 1. else 0.
+      in
       {
         comment = Printf.sprintf
             "State transition %i-%i" prev_on_state on_state;
@@ -97,10 +105,9 @@ let build_transition_ffs num_states =
         prev_state=Some prev_on_state;
         curr_state=Some on_state;
         weight=random_weight ();
-        fn = Atom_fn(fun last curr obs t ->
-               if last = prev_on_state && curr = on_state 
-               then 1.
-               else 0.)
+        fn = match fn_type with 
+          | `Atoms    -> Atom_fn fn 
+          | `Features -> Feature_fn fn
       }
     ) 1 num_states
   ) 1 num_states 
@@ -125,11 +132,34 @@ let build_1state_cont num_states num_atoms =
        ) 0 num_atoms
      ) 1 num_states 
 
+(* feature function *)
+(*let build_1state_cont num_states num_atoms =
+     List.flatten @:
+     list_populate (fun on_state ->
+       list_populate (fun atom_num ->
+         {
+          comment = Printf.sprintf
+            "On state %i relative change atom[%i].x" on_state atom_num;
+          atom_idx = Some atom_num;
+          prev_state=None;
+          curr_state=Some on_state;
+          weight=random_weight ();
+          fn = Atom_fn(fun last curr obs t ->
+                if curr = on_state then
+                  let cur_val = (obs_atom obs.(t-2)).atoms.(atom_num).x in
+                  ((obs_atom obs.(t-1)).atoms.(atom_num).x -. cur_val) /. cur_val
+                else 0.)
+         }
+       ) 0 num_atoms
+     ) 1 num_states 
+     *)
+
 let build_all_fns num_states num_atoms = function
   | `Atoms ->
       build_1state_xffs num_states num_atoms 
     @ build_1state_xffs2 num_states num_atoms 
-    @ build_transition_ffs num_states
+    @ build_transition_ffs num_states `Atoms
     (*@ build_1state_cont num_states num_atoms*)
-  | `Features -> []
+  | `Features ->
+      build_transition_ffs num_states `Features
 

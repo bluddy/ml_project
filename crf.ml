@@ -40,7 +40,7 @@ let read_one_obs num_atoms ic =
         List.map (fun tup ->
           match tup with
           | (ts, atoms) ->
-              Obs_atom {timestep=ts; atoms=Array.of_list (List.rev atoms)}
+              Obs_atom {a_timestep=ts; atoms=Array.of_list (List.rev atoms)}
       ) ts_atom_tup_list
       in (hd data)
  | _ -> failwith "failed observation read"
@@ -56,7 +56,7 @@ let print_obs obs =
   let data = Array.to_list obs in
   List.iter (fun tup ->
     match tup with
-    | {timestep=ts;atoms=aarray} ->
+    | {a_timestep=ts;atoms=aarray} ->
       List.iter (fun atom -> 
         match atom with 
         | {x=a;y=b;z=c;orig_idx=i} ->

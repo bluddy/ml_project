@@ -10,7 +10,7 @@ type atom = {
 
 type obs_atom = {
   atoms : atom array;
-  timestep : int;
+  a_timestep : int;
 }
 
 type obs_feature = {

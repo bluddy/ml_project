@@ -1,0 +1,6 @@
+*.txt
+*.py
+*.byte
+*.native
+_build
+tags

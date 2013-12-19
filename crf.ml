@@ -115,8 +115,9 @@ let next_window num_atoms last_obs in_chan : (obs array) =
 let convert_degrees neg_deg =
   if neg_deg < 0. then 360. +. neg_deg else neg_deg
 
-(* read all data from a file/string *)
-let read_data str begin_ts =
+(* read all data from a string *)
+(* return inverted data *)
+let read_data_inv str begin_ts =
   let r_ts = Str.regexp "{" in
   let r_data = Str.regexp "\\[" in
   let r_comma = Str.regexp ", " in
@@ -152,26 +153,43 @@ let read_data str begin_ts =
   in
   (* parse into obs *)
   let y_range = create_range 1 5 in
-  let next_idx, ys, obs =
-    List.fold_left (fun (acc_idx, acc_y, acc_obs) d ->
-      let ($) = List.nth in
-      let conv_all_degs = List.map convert_degrees in
-      let chi2, chi1, h_bonds, rmsd =
-        Array.of_list @: conv_all_degs (d$0), 
-        Array.of_list @: conv_all_degs (d$1), 
-        d$2, d$3 in
-      (* h_bonds should be ints *)
-      let h_bonds = Array.of_list @: List.map (fun f -> iof f) h_bonds in
-      let rmsd_y = list_zip y_range rmsd in
-      let (y,_), _ = list_min_op (snd) rmsd_y in
-      (*print_endline @: soi y; [>debug<]*)
-      acc_idx+1, y::acc_y, 
-      Obs_feature {timestep=acc_idx;chi1;chi2;h_bonds}::acc_obs
-    ) (begin_ts, [], []) ts
-  in
-  next_idx, List.rev ys, List.rev obs
+  List.fold_left (fun (acc_idx, acc_y, acc_obs) d ->
+    let ($) = List.nth in
+    let conv_all_degs = List.map convert_degrees in
+    let chi2, chi1, h_bonds, rmsd =
+      Array.of_list @: conv_all_degs (d$0), 
+      Array.of_list @: conv_all_degs (d$1), 
+      d$2, d$3 in
+    (* h_bonds should be ints *)
+    let h_bonds = Array.of_list @: List.map (fun f -> iof f) h_bonds in
+    let rmsd_y = list_zip y_range rmsd in
+    let (y,_), _ = list_min_op (snd) rmsd_y in
+    (*print_endline @: soi y; [>debug<]*)
+    acc_idx+1, y::acc_y, 
+    Obs_feature {timestep=acc_idx;chi1;chi2;h_bonds}::acc_obs
+  ) (begin_ts, [], []) ts
+
+(* regular form of reading data *)
+let read_data str begin_ts =
+  let idx, ys, xs = read_data_inv str begin_ts in
+  idx, List.rev ys, List.rev xs
 
 let read_data_file file begin_ts =
   let f = read_file file in
   read_data f begin_ts
   
+(* read multiple data files *)
+let read_data_files prefix suffix num =
+  let r = create_range 0 num in
+  let names = List.map (fun i ->
+    prefix^soi i^suffix) r
+  in
+  let idx, ys, obs =
+    List.fold_left (fun (idx,acc_y,acc_obs) name ->
+      let f = read_file name in
+      let idx',ys,obs = read_data_inv f idx in
+      idx',ys@acc_y, obs@acc_obs
+    ) (0,[],[]) names
+  in 
+  idx, List.rev ys, List.rev obs
+

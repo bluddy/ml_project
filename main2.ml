@@ -24,6 +24,9 @@ type params = {
   mutable data_type : [`Atoms | `Features];
   mutable limit_data : int option;
   mutable use_hbonds : bool;
+  mutable prefix : string;
+  mutable suffix : string;
+  mutable num_files : int;
 }
 
 let next_window num_atoms last_obs in_chan : obs array = 
@@ -252,7 +255,10 @@ let gradient_ascent_atoms p =
   in loop ffs init_ll p.num_iter 
 
 let gradient_ascent_features p =
-  let _, labels, data = read_data_file p.input_file 1 in
+  let _, labels, data = match p.num_files with
+    | 1 -> read_data_file p.input_file 1
+    | x -> read_data_files p.prefix p.suffix x
+  in
   let labels, data =
     match p.limit_data with
     | Some x -> 
@@ -307,6 +313,9 @@ let params = {
   data_type=`Features;
   limit_data=None;
   use_hbonds=true;
+  prefix="";
+  suffix="";
+  num_files=1;
 }
 
 let main () =
@@ -337,6 +346,12 @@ let main () =
         "limit data     Limit the amount of data used";
     "--no-hbonds", Arg.Unit (fun _ -> params.use_hbonds <- false),
         "hbonds    Don't use hbonds";
+    "--prefix", Arg.String (fun l -> params.prefix <- l),
+        "prefix     Set the multiple file prefix";
+    "--suffix", Arg.String (fun l -> params.suffix <- l),
+        "suffix     Set the multiple file suffix";
+    "--files", Arg.Int (fun i -> params.num_files <- i),
+        "number of files   How many files to run";
   ] in
   let usage_msg =
     Printf.sprintf "%s obs_file [options]" Sys.argv.(0) in

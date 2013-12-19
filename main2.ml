@@ -22,6 +22,7 @@ type params = {
   mutable sigma_squared : float option;
   mutable epsilon : float;
   mutable data_type : [`Atoms | `Features];
+  mutable limit_data : int option;
 }
 
 let next_window num_atoms last_obs in_chan : obs array = 
@@ -251,6 +252,13 @@ let gradient_ascent_atoms p =
 
 let gradient_ascent_features p =
   let _, labels, data = read_data_file p.input_file 1 in
+  let labels, data =
+    match p.limit_data with
+    | Some x -> 
+        p.ts <- x;
+        list_take x labels, list_take x data
+    | None -> labels, data
+  in
   let num_chi1, num_chi2, num_hbonds = match hd data with
    | Obs_feature({chi1;chi2;h_bonds;_}) ->
        Array.length chi1, Array.length chi2, Array.length h_bonds
@@ -295,6 +303,7 @@ let params = {
   sigma_squared=Some 1.;
   epsilon=10e-16;
   data_type=`Features;
+  limit_data=None;
 }
 
 let main () =
@@ -321,6 +330,8 @@ let main () =
         "sigma square     Set sigma squared";
     "--no-sigma", Arg.Unit (fun _ -> params.sigma_squared <- None),
         "sigma square     Don't use sigma squared";
+    "--limit", Arg.Int (fun i -> params.limit_data <- Some i),
+        "limit data     Limit the amount of data used";
   ] in
   let usage_msg =
     Printf.sprintf "%s obs_file [options]" Sys.argv.(0) in

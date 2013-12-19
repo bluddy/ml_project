@@ -142,7 +142,7 @@ let build_bin_fn num_states num_angles bins is_chi1 =
          List.fold_left (fun (acc,last_bin) bin ->
           {
             comment = Printf.sprintf
-              "On state %i %s[%i] bin[%f-%f]" 
+              "On state %i %s[%i] bin[%.1f-%.1f]" 
                 on_state is_chi_s angle_num last_bin bin;
             atom_idx=None;
             prev_state=None;

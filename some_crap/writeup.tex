@@ -23,10 +23,32 @@
 
 This document serves as an appendix to the presentation on the final project. Refer to that document for details.
 
-\section {Derivations of Gradient Ascent}
+\section {Derivations of Gradient }
 
-\section 
+Likelihood of datum m:
 
+exp ( \sum_{t=2}^{T} \sum_{i=1}^{F}  \lambda_i f_i (y_t^m, y_{t-1}^m, x^m) ) / Z_{x^m}
+
+Log Likelihood:
+ \sum_{t=2}^{T} \sum_{i=1}^{F}  \lambda_i f_i (y_t^m, y_{t-1}^m, x^m)   -  log Z_{x^m}
+
+d/d \lamba_i  = \sum_{t=2}^{T}  f_i (y_t^m, y_{t-1}^m, x^m) - ((dz/di) / Z)
+
+=  \sum_{t=2}^{T}  f_i (y_t^m, y_{t-1}^m, x^m) - (1 / Z) \sum_{y'} exp ( \sum_{t=2}^{T} \sum_{i=1}^{F}  \lambda_i f_i (y'_t^m, y'_{t-1}^m, x^m) )  \sum_{t=2}^{T}  f_i (y'_t^m, y'_{t-1}^m, x^m)
+
+
+=  \sum_{t=2}^{T}  f_i (y_t^m, y_{t-1}^m, x^m) -  \sum_{y'} (1 / Z) exp ( \sum_{t=2}^{T} \sum_{i=1}^{F}  \lambda_i f_i (y'_t^m, y'_{t-1}^m, x^m) )  \sum_{t=2}^{T}  f_i (y'_t^m, y'_{t-1}^m, x^m)
+
+=  \sum_{t=2}^{T}  f_i (y_t^m, y_{t-1}^m, x^m) - \sum_{y'} P(y' | x^m) \sum_{t=2}^{T}  f_i (y'_t^m, y'_{t-1}^m, x^m)
+
+=  \sum_{t=2}^{T}  f_i (y_t^m, y_{t-1}^m, x^m) - \sum_{y'} \sum_{t=2}^{T}  P(y' | x^m)  f_i (y'_t^m, y'_{t-1}^m, x^m)
+
+=  \sum_{t=2}^{T}  f_i (y_t^m, y_{t-1}^m, x^m) - \sum_{t=2}^{T} \sum_{y'}   P(y' | x^m)  f_i (y'_t^m, y'_{t-1}^m, x^m)
+
+=  \sum_{t=2}^{T}  f_i (y_t^m, y_{t-1}^m, x^m) -} \sum_{y'}   P(y' | x^m)  f_i (y'_t^m, y'_{t-1}^m, x^m)
+
+Where the term on the right is expected value of f_i with respect to the current model parameters.
 
 
 \end{document}
+

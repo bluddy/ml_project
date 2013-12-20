@@ -1,0 +1,10 @@
+Final submission
+Josh Wheeler, Yotam Barnoy
+
+Run 'build' to build the ocaml program.
+The sample script, 'sample_run', takes no arguments. Just call it. (The actual binary takes a bunch of arguments which can be seen by running 'main.native --help').
+
+The /doc directory contains both our presentation and the appendix.
+
+Our program prints out the log likelihood at each iteration of the gradient ascent, and once covergence is reached, it prints out the parameter weights sorted from lowest to highest, with labels.
+
